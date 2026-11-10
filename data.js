@@ -301,3 +301,20 @@ const FIREBASE_CONFIG={
 };
 // 部屋番号のけた数
 const ROOM_DIGITS=6;
+
+/* ---------- 音楽（場面ごとの曲） ----------
+   曲のファイルは bgm/ に置く（mp3）。場面と曲の組み合わせを変えたいときは、ここのファイル名を書きかえる。
+   loop：くり返し流すか。BGM_VOL：音楽の大きさ（効果音にくらべて 0〜1） */
+const BGM={
+  title:    {f:'bgm_title',      loop:true},   // タイトル画面
+  lobby:    {f:'bgm_lobby',      loop:true},   // みんなで遊ぶ：待合室
+  map:      {f:'bgm_map',        loop:true},   // 地図・命令を出す
+  diplomacy:{f:'bgm_diplomacy',  loop:true},   // 書状と外交のタブ
+  battle:   {f:'bgm_battle',     loop:true},   // 合戦（野戦）
+  siege:    {f:'bgm_siege',      loop:true},   // 城攻め
+  result:   {f:'bgm_result',     loop:true},   // 年の結果
+  crisis:   {f:'bgm_crisis',     loop:false},  // 危機（本能寺の変・一揆など）。終わると地図の曲にもどる
+  win:      {f:'bgm_ending_win', loop:false},  // 天下統一
+  lose:     {f:'bgm_ending_lose',loop:false}   // 滅亡・ゲーム終了
+};
+const BGM_VOL=0.55;

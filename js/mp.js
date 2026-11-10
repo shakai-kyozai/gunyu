@@ -172,7 +172,7 @@ function lobbyMapDraw(canPick){if(q$('#lmwrap .lmw')){lobbyNicks();return;}const
     p.style.fill=H[k].col;p.classList.toggle('mine',!!mine);p.classList.toggle('tk',!!cl&&!mine);});
   sv.querySelectorAll('.lml').forEach(g=>{const k=g.dataset.k;const cl=M.houses[k];const u=g.querySelector('.lmu');u.textContent=cl?cl.nick:'';
     g.classList.toggle('on',!!cl);g.classList.toggle('mine',!!cl&&cl.uid===M.uid);});}
-function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlays;const rs=M.room.resume;
+function lobby(){if(typeof MUSIC!=='undefined')MUSIC.scene('lobby');const host=M.role==='host';const canPick=!host||M.room.hostPlays;const rs=M.room.resume;
   q$('#app').innerHTML=`<div class="mpscr">
     <div class="mphead"><div><div class="mpl">部屋番号</div><div class="mpcode">${fmtCode(M.code)}</div>
       <div class="hint">${host?'ほかの人は「みんなで遊ぶ」→ 部屋番号を入れて参加する。':`部屋を作った人：${esc(M.room.hostNick||'')}　`}1ターンの時間：${esc((TIMES.find(t=>t[0]===M.room.turnSec)||[0,'なし'])[1])}</div></div>

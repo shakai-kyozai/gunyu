@@ -36,7 +36,7 @@ const SFX=(()=>{
   function loop(k){stopLoop();loopNow=play(k,{loop:true});}
   function stopLoop(f){if(loopNow){loopNow.stop(f??.4);loopNow=null;}}
   function set(o){if('on' in o){on=o.on;lss('gunyu_snd',on?'1':'0');}if('level' in o){level=o.level;lss('gunyu_sndv',String(level));}
-    if(master)master.gain.value=on?level:0;if(!on)stopLoop(0);btn();}
+    if(master)master.gain.value=on?level:0;if(!on)stopLoop(0);btn();if(typeof MUSIC!=='undefined')MUSIC.vol();}
   // 右上の「音」ボタン
   function btn(){let b=document.getElementById('sndBtn');
     if(!b){b=document.createElement('button');b.id='sndBtn';b.type='button';b.title='効果音の入・切と大きさ';document.body.appendChild(b);
@@ -48,13 +48,32 @@ const SFX=(()=>{
     const t=(b.textContent||'').trim();
     if(/^(もどる|とじる|閉じる|やめる|キャンセル)/.test(t))play('se_cancel');else if(!b.classList.contains('bvcb')&&!b.classList.contains('ego'))play('se_click');},{capture:true});
   setTimeout(btn,0);
-  return {play,loop,stopLoop,set,unlock,isOn:()=>on};
+  return {play,loop,stopLoop,set,unlock,isOn:()=>on,level:()=>level};
 })();
+
+/* ---------- 音楽：場面ごとに曲を切りかえる（前の曲は静かに消す） ---------- */
+const MUSIC=(()=>{let cur=null,el=null,want=null,started=false;
+  const base=()=>(window.GUNYU_BASE||'')+'bgm/';
+  const v=()=>SFX.isOn()?SFX.level()*(typeof BGM_VOL==='number'?BGM_VOL:.55):0;
+  function fade(a,to,ms,done){const from=a.volume;const t0=performance.now();const step=()=>{const k=Math.min(1,(performance.now()-t0)/ms);a.volume=Math.max(0,Math.min(1,from+(to-from)*k));if(k<1)requestAnimationFrame(step);else done&&done();};step();}
+  function scene(n){want=n;if(!started)return;if(n===cur)return;const B=typeof BGM!=='undefined'&&BGM[n];
+    if(el){const old=el;fade(old,0,1200,()=>{old.pause();old.src='';});el=null;}cur=n;if(!B)return;
+    const a=new Audio(base()+B.f+'.mp3');a.loop=!!B.loop;a.volume=0;a.preload='auto';el=a;
+    a.onended=()=>{if(el===a&&!B.loop){cur=null;if(n==='crisis')scene('map');}};
+    a.play().then(()=>fade(a,v(),1600)).catch(()=>{});}
+  function vol(){if(el)el.volume=v();}
+  // ブラウザは、画面にさわるまで音を出さない。さわったら、そのときの場面の曲を流す
+  addEventListener('pointerdown',()=>{if(started)return;started=true;if(want)scene(want);},{capture:true});
+  return {scene,vol,now:()=>cur};})();
 
 /* ---------- ゲームの場面に音をつける ---------- */
 (function(){
   const wrap=(name,before,after)=>{const o=window[name];if(typeof o!=='function')return;window[name]=function(...a){try{before&&before(...a);}catch(e){}const r=o.apply(this,a);try{after&&after(r,...a);}catch(e){}return r;};};
-  const P=k=>SFX.play(k);
+  const P=k=>SFX.play(k);const M=n=>MUSIC.scene(n);
+  wrap('titleScreen',()=>M('title'));
+  wrap('startUI',()=>M('map'));
+  wrap('setTab',null,()=>M(UI.tab==='dip'?'diplomacy':'map'));
+  if(document.getElementById('nick'))M('title');
   wrap('selArmy',()=>P('se_select'));
   wrap('makeArmy',null,()=>P('se_new_army'));
   wrap('doNewArmy',null,()=>P('se_new_army'));
@@ -63,19 +82,19 @@ const SFX=(()=>{
   wrap('jorakuGo',null,()=>P('se_policy'));
   wrap('doResolve',()=>P('se_turn_end'));
   wrap('animateMoves',()=>{if(S&&S.lastOrders&&Object.keys(S.lastOrders).length)P('se_armies_move');});
-  wrap('showEvent',()=>{P('se_new_year');const ev=(S&&S.events||[]).filter(e=>e.h===S.me).map(e=>e.t).join(' ');
-    if(/一揆/.test(ev))setTimeout(()=>P('se_ikki'),900);else if(/本能寺|亡くなった|謀反|裏切/.test(ev))setTimeout(()=>P('se_event_crisis'),900);});
-  wrap('showResultDlg',()=>{P('se_result');try{const hs=Object.keys(H).filter(alive);const order=hs.sort((a,b)=>kokuOf(b)-kokuOf(a));const off=S.mode==='multi'?2:1;
+  wrap('showEvent',()=>{P('se_new_year');M(UI.tab==='dip'?'diplomacy':'map');const ev=(S&&S.events||[]).filter(e=>e.h===S.me).map(e=>e.t).join(' ');
+    if(/一揆/.test(ev)){setTimeout(()=>P('se_ikki'),900);M('crisis');}else if(/本能寺|亡くなった|謀反|裏切/.test(ev)){setTimeout(()=>P('se_event_crisis'),900);M('crisis');}});
+  wrap('showResultDlg',()=>{P('se_result');M('result');try{const hs=Object.keys(H).filter(alive);const order=hs.sort((a,b)=>kokuOf(b)-kokuOf(a));const off=S.mode==='multi'?2:1;
     const pv=h=>{const a=S.hist[h]||[];return a.length>=off?a[a.length-off]:0;};const po=Object.keys(H).filter(h=>pv(h)>0).sort((a,b)=>pv(b)-pv(a));
     if(po.indexOf(S.me)>order.indexOf(S.me))setTimeout(()=>P('se_rank_up'),700);}catch(e){}});
-  wrap('showEnd',()=>{if(S&&S.dead&&S.dead[S.me])P('se_clan_destroyed');else P('se_victory');});
+  wrap('showEnd',()=>{const lost=S&&S.dead&&S.dead[S.me]||(S&&S.unifier&&S.unifier!==S.me);if(lost)P('se_clan_destroyed');else P('se_victory');M(lost?'lose':'win');});
   wrap('replyDlg',(to,type,L)=>{const ok=L&&L.ok;P(ok&&(type==='kudaru'||type==='kosan')?'se_vassal':ok?'se_reply_ok':'se_reply_ng');});
   wrap('doLetter',()=>P('se_letter_send'));
   wrap('answerInbox',(i,yes)=>{const m=S.inbox[i];P(yes&&m&&m.type==='kashin'?'se_vassal':yes?'se_reply_ok':'se_cancel');});
   // 行き先を決めたとき
   const og=window.guardOrder;if(og)window.guardOrder=function(ar,path,go){return og.call(this,ar,path,(...a)=>{P('se_march_order');return go(...a);});};
   // 合戦
-  if(typeof LB!=='undefined'){const oo=LB.open;LB.open=function(ev,auto,cb){P('se_battle_start');return oo.call(this,ev,auto,cb?(ch=>{if(ch&&ch.form)P('se_form_select');cb(ch);}):cb);};
+  if(typeof LB!=='undefined'){const oo=LB.open;LB.open=function(ev,auto,cb){P('se_battle_start');M(ev&&ev.field?'battle':'siege');return oo.call(this,ev,auto,cb?(ch=>{if(ch&&ch.form)P('se_form_select');cb(ch);}):cb);};
     const oe=LB.end;LB.end=function(b,cb){SFX.stopLoop(.6);try{const me=S&&S.me;const won=b&&b.r&&((b.r.win==='att'&&(b.attHs||[]).includes(me))||(b.r.win==='def'&&((b.defHs||[]).includes(me)||b.def===me)));
       const fell=b&&b.r&&b.r.win==='att'&&!b.field;if(fell)P('se_castle_fall');setTimeout(()=>P(won?'se_victory':'se_rout'),fell?900:0);}catch(e){}return oe.call(this,b,cb);};
     const ort=LB.retreat;LB.retreat=function(ev,cb){P('se_retreat');SFX.stopLoop(.8);return ort.call(this,ev,cb);};}
