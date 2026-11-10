@@ -559,7 +559,7 @@ const SUBS={rec:'募兵',cmd:'大将を替える',org:'編成（分ける・合�
 function setSub(s){UI.sub=UI.sub===s?null:s;if(s!=='org')UI.cards=new Set();UI.mode=null;UI.reach=null;refresh();}
 function nextStep(ar){
   const o=S.orders[ar.id];
-  if(UI.mode==='move')return {t:'地図の光っている地域をクリックして、行き先を決める',d:'主な街道は1、山道・海路は2を使い、1ターンに3まで進める。敵の地域に入ると、そこで戦いになる。'};
+  if(UI.mode==='move')return {t:'地図の光っている地域をクリックして、行き先を決める',d:`主な街道は1、山道・海路は2を使い、1ターンに${MP}まで進める。敵の地域に入ると、そこで戦いになる。`};
   if(o)return {t:`命令ずみ：${A[o[o.length-1]].n}へ進む`,d:`通る道：${o.map(x=>A[x].n).join('→')}。ほかの軍勢にも命令を出すか、「命令を確定してターンを終える」を押す。`,done:true};
   if(S.own[ar.a]!==ar.h)return {t:'次にすること：行き先を決めるか、ここにとどまる',d:'ここは自分の領内ではないので、募兵や補充はできない。'};
   return {t:'次にすること：行き先を決めるか、ここにとどまる',d:'部隊が足りないときは「募兵」で兵を加える。'};
@@ -800,14 +800,17 @@ function battleHTML(b){
   const r=b.r;const meAtt=b.attHs.includes(S.me),meDef=b.def===S.me||b.defHs.includes(S.me);
   const won=(meAtt&&r.win==='att')||(meDef&&r.win==='def');
   const sideN=(hs,own)=>hs.length?hs.map(hn).join('・'):(own?hn(own):(NEUTRAL_NAME[b.a]||'国人衆'));
-  return `<div class="bt ${meAtt||meDef?(won?'win':'lose'):''}"><div class="bth">${scrollBand(esc(b.name),'sm')}<span>（${wareki(b.y)}・${A[b.a].pv}国）</span>　<b class="${won?'up':meAtt||meDef?'dn':''}">${r.win==='att'?'攻めた側の勝ち':'守った側の勝ち'}</b></div>
+  // ふだんは概要だけ。クリックすると、くわしい戦いの経過が開く
+  const tot=n=>n&&typeof n==='object'?TORDER.reduce((x,t)=>x+(n[t]||0),0):(+n||0);const lossA=Math.max(0,Math.round((tot(r.A0)-tot(r.A1))*100)),lossD=Math.max(0,Math.round((tot(r.D0)-tot(r.D1))*100));
+  return `<details class="bt ${meAtt||meDef?(won?'win':'lose'):''}"><summary class="bth">${scrollBand(esc(b.name),'sm')}<span>（${wareki(b.y)}・${A[b.a].pv}国）</span>　<b class="${won?'up':meAtt||meDef?'dn':''}">${meAtt||meDef?(won?'勝ち':'負け'):''}（${r.win==='att'?'攻めた側の勝ち':'守った側の勝ち'}）</b>
+   <span class="btsum">攻：${esc(sideN(b.attHs))} -${lossA.toLocaleString()}人　／　守：${esc(sideN(b.defHs,b.def))} -${lossD.toLocaleString()}人${b.dead?`　<b class="dn">討ち死に：${esc(b.dead.join('、'))}</b>`:''}</span><span class="btmore">くわしく見る ▾</span></summary>
    <table class="btt"><tr><th></th><th>攻める側：${esc(sideN(b.attHs))}</th><th>守る側：${esc(sideN(b.defHs,b.def))}${b.def?'（城兵ふくむ）':''}</th></tr>
    <tr><td>大将</td><td>${esc(r.cmdA.n)}（統率${r.cmdA.t}）</td><td>${esc(r.cmdD.n)}（統率${r.cmdD.t}）</td></tr>
    ${r.formA?`<tr><td>陣形</td><td>${esc(FORMS[r.formA]?FORMS[r.formA].n:'')}</td><td>${esc((b.field?FORMS:SIEGE_CMD)[r.formD]?(b.field?FORMS:SIEGE_CMD)[r.formD].n:'')}</td></tr>`:''}
    <tr><td>はじめ</td><td>${nStr(r.A0)}</td><td>${nStr(r.D0)}</td></tr>
    ${r.log.map(l=>`<tr><td>${l.ph}</td><td>🎲${l.rA}　-${l.lA.toLocaleString()}人</td><td>🎲${l.rD}　-${l.lD.toLocaleString()}人</td></tr>`).join('')}
    <tr><td>のこり</td><td>${nStr(r.A1)}</td><td>${nStr(r.D1)}</td></tr>${r.moA!=null?`<tr><td>士気</td><td>${r.moA}</td><td>${r.moD}</td></tr>`:''}</table>${r.rout==='morale'?`<div class="hint">${esc(r.win==='att'?sideN(b.defHs,b.def):sideN(b.attHs))}は士気がくずれて敗走した</div>`:''}
-   ${r.mods.length?`<div class="hint">${r.mods.join('／')}</div>`:''}${r.retreat?`<div class="hint">${esc(r.retreat.side==='A'?sideN(b.attHs):sideN(b.defHs,b.def))}が退却した${r.retreat.idx>=0?`（しんがり：${esc(uName(r.retreat.t))}隊${r.retreat.n1>=0.5?'が食い止めた':'は全滅'}）`:''}</div>`:''}${b.dead?`<div class="dn">討ち死に：${b.dead.join('、')}</div>`:''}${b.ev?`<div class="row"><button class="btn small" type="button" onclick="replayBattle(${S.lastBattles.indexOf(b)})">⚔ 戦いの場面をもう一度見る</button></div>`:''}</div>`;
+   ${r.mods.length?`<div class="hint">${r.mods.join('／')}</div>`:''}${r.retreat?`<div class="hint">${esc(r.retreat.side==='A'?sideN(b.attHs):sideN(b.defHs,b.def))}が退却した${r.retreat.idx>=0?`（しんがり：${esc(uName(r.retreat.t))}隊${r.retreat.n1>=0.5?'が食い止めた':'は全滅'}）`:''}</div>`:''}${b.dead?`<div class="dn">討ち死に：${b.dead.join('、')}</div>`:''}${b.ev?`<div class="row"><button class="btn small" type="button" onclick="replayBattle(${S.lastBattles.indexOf(b)})">⚔ 戦いの場面をもう一度見る</button></div>`:''}</details>`;
 }
 /* ---------- 戦いの場面 ----------
    あなたの軍勢がかかわる戦いは、その場で陣形をえらび、段階ごとに退却を命じられる（エンジンの yield とやりとりする）
@@ -853,7 +856,7 @@ function showResultDlg(){
    ${ev||ik?`<ul>${ev}${ik}</ul>`:''}
    <p class="hint">全国のうごき：${S.news.slice(-8).map(esc).join('／')}</p>
    <p>収入 +${income(S.me)}　維持費 -${upkeep(S.me)}${nenguOut(S.me)?`　年貢 -${nenguOut(S.me)}`:''}${nenguIn(S.me)?`　年貢 +${nenguIn(S.me)}`:''}　→　金 ${S.gold[S.me]}</p>
-   <div class="row"><button class="btn pri" type="button" onclick="closeDlg();goNext()">次のターンへ</button><button class="btn" type="button" onclick="closeDlg()">地図で動きを見る</button></div>`);
+   <div class="row rsbtn"><button class="btn pri" type="button" onclick="closeDlg();goNext()">次のターンへ</button><button class="btn" type="button" onclick="closeDlg()">地図で動きを見る</button></div>`);
 }
 function replayBattle(i){const b=S.lastBattles[i];if(b)playBattle(b,()=>showResultDlg());}
 // 記録から見なおす
@@ -1268,7 +1271,7 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
     <li>本拠の城と国の拠点の城は、攻めに負けてもすぐには落ちない。城兵が本丸にこもって籠城し、本拠は3ターン、拠点は2ターン持ちこたえる。そのあいだに軍勢を送り、包囲している敵を破れば城を守れる。包囲の軍勢がいなくなっても、包囲はとける。</li>
     <li>後詰め：命令を出していない軍勢は、となりの自分の城が攻められると、自動で助けに入っていっしょに守る（本拠のまわりに敵がいるときは動かない）。</li>
     <li>旗色が悪いときは「退却する」で退ける。いちばん経験のある部隊がしんがりになって敵を食い止め、そのあいだにほかの部隊が退く。</li>
-    <li>軍勢は街道を通って動く。主な街道は1、山道・海路は2を使い、1ターンに3まで進める。敵や国人衆の地域に入るとそこで止まり、戦いになる。</li>
+    <li>軍勢は街道を通って動く。主な街道は1、山道・海路は2を使い、1ターンに${MP}まで進める。敵や国人衆の地域に入るとそこで止まり、戦いになる。</li>
     <li>敵の軍勢がいる地域は、赤い斜線でぬられる（にらみの範囲）。そこに入った軍勢は止まり、その敵の軍勢と戦いになる。</li>
     <li>持てる兵の数は石高で決まる（1万石につき250人）。上限をこえると戦いの力が少し落ちる。兵には維持費がかかる。</li>
     <li>すべての領地を失っても、軍勢が残っていれば家は滅ばない。最後の城を取った大名の家臣になり、領地のない軍勢だけで主君のために戦う（領地がないあいだは維持費がかからない）。「独立する」の書状で下剋上すれば、領地のない軍勢だけで、ふたたび城を取りにいける。自分から軍門に下ったときは、領地をもったまま家臣になる。</li>
@@ -1298,7 +1301,7 @@ function startUI(){
   $('#app').innerHTML=`<div class="topbar" id="topTabs"></div><div class="game dkg"><div class="mapw"><svg id="map"></svg><div id="dock"></div>
    <div class="zm"><button type="button" class="zb" onclick="zoom(0.75)" title="ズームイン">＋</button><button type="button" class="zb" onclick="zoom(1.33)" title="ズームアウト">－</button><button type="button" class="zb t" onclick="fitMap()">全国</button><button type="button" class="zb t" onclick="focusMe()">わが家</button><button type="button" class="zb t v3b" id="b3d" onclick="set3D(!UI.v3)"></button><button type="button" class="zb t" id="bUi" onclick="cycleUi()" title="画面の文字やボタンの大きさ"></button></div>
    <div class="mmode"><button type="button" class="btn small" id="mDip" onclick="setMode('dip')">外交の色</button><button type="button" class="btn small" id="mPow" onclick="setMode('pow')">家ごとの色</button><button type="button" class="btn small" id="mTer" onclick="setMode('ter')">地形</button><span id="dipLeg"></span></div>
-   <div class="legend" onclick="this.classList.toggle('open')"><span class="lgt">凡例を見る ▸</span><span class="lgc">${Object.keys(KIND).map(k=>`<svg class="lgi" viewBox="0 0 512 512"><use href="#ic-${k}"/></svg>${KIND[k].n}`).join(' ')}　<span class="lg2d"><span class="lr main"></span>主な街道 <span class="lr mtn"></span>山道 </span><span class="v3only">街道は地図に描きこみ（軍勢は街道にそって動く） </span><span class="lr sea"></span>海路　右下の数字は部隊の数（1部隊＝最大1000人）　大きな印は国の拠点の城　<span class="zocl"></span>赤い斜線＝敵の軍勢がいる地域（にらみの範囲）：入るとそこで止まり、その敵と戦う<span class="v3only"><br>右クリック：選んだ軍勢をその地域へ進める　立体の地図：ドラッグで動かす・右ドラッグで回す・ホイールで拡大　標高：国土地理院（高さは8倍に強調）</span></span></div></div><div id="side"><div id="panel"></div><div id="journal"></div></div></div>`;
+</div><div id="side"><div id="panel"></div><div class="legend" onclick="this.classList.toggle('open')"><span class="lgt">凡例を見る ▸</span><span class="lgc">${Object.keys(KIND).map(k=>`<svg class="lgi" viewBox="0 0 512 512"><use href="#ic-${k}"/></svg>${KIND[k].n}`).join(' ')}　<span class="lg2d"><span class="lr main"></span>主な街道 <span class="lr mtn"></span>山道 </span><span class="v3only">街道は地図に描きこみ（軍勢は街道にそって動く） </span><span class="lr sea"></span>海路　右下の数字は部隊の数（1部隊＝最大1000人）　大きな印は国の拠点の城　<span class="zocl"></span>赤い斜線＝敵の軍勢がいる地域（にらみの範囲）：入るとそこで止まり、その敵と戦う<span class="v3only"><br>右クリック：選んだ軍勢をその地域へ進める　立体の地図：ドラッグで動かす・右ドラッグで回す・ホイールで拡大　標高：国土地理院（高さは8倍に強調）</span></span></div><div id="journal"></div></div></div>`;
   UI.vb=null;applyUi();buildMap();setTimeout(()=>setMode(UI.mapMode),0);UI.vb=UI.full.slice();focusMe();refresh();set3D(UI.v3,true);
 }
 /* ---------- 立体の地図 ---------- */
