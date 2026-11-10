@@ -767,3 +767,19 @@ body{font-family:"BIZ UDPMincho","BIZ UDP明朝 Medium","BIZ UDPGothic",serif;ba
 .mpsv{border-top:1px dashed var(--line);padding-top:6px;display:flex;flex-direction:column;gap:3px}
 .mpsv input[type=file]{font-size:12px;max-width:190px}
 .mpmine .mpp{max-width:520px}
+
+/* スマホなど小さい画面：陣形をえらぶ画面は、画面いっぱいに出して縦にならべる */
+@media (max-width:760px),(max-height:560px){
+  .bvch{position:fixed;inset:0;z-index:80;justify-content:flex-start;overflow-y:auto;padding:18px 14px 24px;border-radius:0;background:rgba(14,9,6,.97)}
+  .bvcht{font-size:21px}
+  .bvchs{flex-direction:column;flex-wrap:nowrap;width:100%;max-width:440px;gap:8px}
+  .bvcb{width:100%;box-sizing:border-box;flex-direction:row;flex-wrap:wrap;justify-content:flex-start;align-items:center;column-gap:8px;row-gap:2px;padding:9px 12px;text-align:left}
+  .bvci{font-size:18px}.bvcb b{font-size:17px}
+  .bvcb small{flex-basis:100%;font-size:12px;line-height:1.45}
+  .bvchh{font-size:12px;max-width:440px}
+  /* 戦いの結果も、画面いっぱいに出す */
+  .bvres{position:fixed;inset:0;z-index:80;border-radius:0;padding:20px 14px;background:rgba(14,9,6,.94);gap:12px}
+  .bvrt{font-size:58px}.bvres.other .bvrt{font-size:38px}
+  .bvrs{font-size:16px;padding:0 6px}
+  .bvrn{flex-direction:column;align-items:center;gap:4px}
+}
