@@ -2,6 +2,11 @@
    群雄割拠　ゲームのしくみ
    ========================================================= */
 let S=null,uid=1;
+// 人が動かす家か（みんなで遊ぶ：S.players にのっている家。一人で遊ぶ：S.me）
+const isHu=h=>!!h&&(S&&S.players&&Object.keys(S.players).length?!!S.players[h]:h===S.me);
+const humans=()=>S&&S.players&&Object.keys(S.players).length?Object.keys(S.players):(S&&S.me?[S.me]:[]);
+// 新しい部隊・軍勢の番号。みんなで遊ぶとき、各家が自分の画面でつくる分は家ごとの番号にする（親の画面と同じ番号になる）
+function nid(){if(S&&S._act){const h=S._act;S.idc=S.idc||{};S.idc[h]=(S.idc[h]||0)+1;return (HOUSE_DEF.findIndex(d=>d[0]===h)+1)*1000000+S.idc[h];}return uid++;}
 const $=q=>document.querySelector(q);
 const rnd=n=>Math.floor(Math.random()*n);
 const d6=()=>1+rnd(6);
@@ -14,7 +19,7 @@ const xpLv=xp=>Math.min(5,Math.floor(xp/20));
 const xpFac=xp=>1+0.07*xpLv(xp);
 const nOf=ar=>{const c=zero();for(const u of ar.u)c[u.t]+=u.n;return c;};
 const totU=ar=>ar.u.reduce((s,u)=>s+u.n,0);
-const mkUnit=(t,n,xp=0)=>({id:uid++,t,n,xp});
+const mkUnit=(t,n,xp=0)=>({id:nid(),t,n,xp});
 function cardsFrom(counts,xp=0){const L=[];for(const t of TORDER){let n=Math.round(counts[t]||0);while(n>0){const k=Math.min(UNIT_MAX,n);L.push(mkUnit(t,k,xp));n-=k;}}return L;}
 const zero=()=>({ashi:0,kiba:0,yumi:0,teppo:0});
 const A={};AREAS.forEach(a=>A[a.id]=a);
@@ -160,9 +165,9 @@ function guardOf(ar){const m=guardMax(ar);if(ar.g==null)ar.g=m;return Math.min(a
 function killCommander(ar,rec){const b=ar.cmd!=null?S.busho[ar.h][ar.cmd]:null;if(!b||b.dead)return;const wasLord=ar.cmd===lordIdx(ar.h);b.dead=true;ar.g=0;
   if(rec)rec.dead=(rec.dead||[]).concat(b.n);
   news(`${hn(ar.h)}の${b.n}が討ち死にした`);
-  if(ar.h===S.me)S.log.push({y:yearNow(),t:`${b.n}が討ち死にする`});
+  if(isHu(ar.h))S.log.push({h:ar.h,y:yearNow(),t:`${b.n}が討ち死にする`});
   if(wasLord){const ni=lordIdx(ar.h);const nb=ni>=0?S.busho[ar.h][ni]:null;news(nb?`${hn(ar.h)}では${nb.n}が家をついだ`:`${hn(ar.h)}は当主を失った`);
-    if(ar.h===S.me)S.events.push({h:S.me,t:`当主の${b.n}が討ち死にした。${nb?nb.n+'が家をつぐ。':'家をつぐ武将がいない。'}`});}}
+    if(isHu(ar.h))S.events.push({h:ar.h,t:`当主の${b.n}が討ち死にした。${nb?nb.n+'が家をつぐ。':'家をつぐ武将がいない。'}`});}}
 // コンピューターの陣形えらび：兵が多ければ攻め、少なければ守り
 function aiForm(my,en){const r=my/Math.max(0.1,en);const q=Math.random();return r>1.3?(q<.55?'bal':'atk'):r<0.8?(q<.7?'def':'bal'):['atk','bal','def'][rnd(3)];}
 // 戦い：射撃戦→鑓合わせ→打撃→乱戦（→乱戦がつづく）。あなたの軍勢がかかわるときは、陣形をえらび、段階ごとに退却できる（yield で画面とやりとりする）
@@ -284,7 +289,7 @@ function sideOf(arms,extraCards){
   const real=arms.filter(x=>guardMax(x)>0);
   const main=real.slice().sort((p,q)=>cmdOf(q).t-cmdOf(p).t)[0]||null;
   const guards=real.filter(x=>guardOf(x)>0).map(x=>({ar:x,n:guardOf(x),max:guardMax(x),main:x===main,name:cmdOf(x).n,h:x.h}));
-  return {cards,guards,main,me:arms.some(x=>x.h===S.me),hs:[...new Set(arms.map(x=>x.h))]};
+  return {cards,guards,main,me:arms.some(x=>S._live?S._live(x.h):x.h===S.me),hu:[...new Set(arms.map(x=>x.h))].filter(isHu),hs:[...new Set(arms.map(x=>x.h))]};
 }
 // 旗本の結果をもどす。全滅した旗本の大将は討ち死に
 function guardsBack(sd,rec){for(const g of sd.guards){g.ar.g=Math.round(g.n*100)/100;if(g.dead||g.n<=0)killCommander(g.ar,rec);}}
@@ -340,7 +345,7 @@ function kozume(a,owner,plans){const out=[];if(!owner||!H[owner])return out;
       if(isHonjo(b,x.h)&&nbr(b).some(c=>c!==a&&armiesAt(c).some(y=>rel(y.h,x.h)==='teki')))continue;  // 本拠も危ないときは動かない
       x.prev=x.a;x.a=a;plans[x.id]={steps:[],i:0,stop:true};out.push(x);
       news(`後詰め：${hn(x.h)}の${cmdOf(x).n}の軍勢が${A[a].n}の助けに入った`);
-      if(x.h===S.me)S.log.push({y:yearNow(),t:`後詰め：${cmdOf(x).n}の軍勢が${A[b].n}から${A[a].n}の助けに入る`});}}
+      if(isHu(x.h))S.log.push({h:x.h,y:yearNow(),t:`後詰め：${cmdOf(x).n}の軍勢が${A[b].n}から${A[a].n}の助けに入る`});}}
   return out;}
 const holdTurns=(a,h)=>A[a].k!=='城'||!h||!H[h]?0:isHonjo(a,h)?(typeof SIEGE_TURNS==='object'?SIEGE_TURNS.honjo:3):isMain(a)?(typeof SIEGE_TURNS==='object'?SIEGE_TURNS.main:2):0;
 function* battleAtG(a,plans,battles){
@@ -377,8 +382,8 @@ function* battleAtG(a,plans,battles){
     battles.push(rec);
     {const wn=r.win==='att'?hn(lead):(owner?hn(owner):(NEUTRAL_NAME[a]||'国人衆'));const ls=r.win==='att'?(owner?hn(owner):(NEUTRAL_NAME[a]||'国人衆')):hn(lead);
      news(`${rec.name}（${A[a].pv}国）：${wn}が${ls}を破った`);
-     if(rec.attHs.includes(S.me)||owner===S.me||rec.defHs.includes(S.me)){const won=(rec.attHs.includes(S.me)&&r.win==='att')||((owner===S.me||rec.defHs.includes(S.me))&&r.win==='def');S.log.push({y:yearNow(),t:`${rec.name}で${won?'勝つ':'敗れる'}（相手：${won?ls:wn}）`,battle:true});
-       S.myBattles=(S.myBattles||[]).concat({name:rec.name,y:yearNow(),won,vs:won?ls:wn,pv:A[a].pv});}}
+     for(const hh of [...new Set(rec.attHs.concat(rec.defHs,owner?[owner]:[]))].filter(isHu)){const won=(rec.attHs.includes(hh)&&r.win==='att')||((owner===hh||rec.defHs.includes(hh))&&r.win==='def');S.log.push({h:hh,y:yearNow(),t:`${rec.name}で${won?'勝つ':'敗れる'}（相手：${won?ls:wn}）`,battle:true});
+       S.myBattles=(S.myBattles||[]).concat({h:hh,name:rec.name,y:yearNow(),won,vs:won?ls:wn,pv:A[a].pv});}}
     if(koz.length)rec.kozume=koz.map(x=>cmdOf(x).n);
     if(S._busy)for(const x of attArm.concat(defArm))S._busy.add(x.id);
     // 籠城：本拠・国の拠点の城は、負けてもすぐには落ちない。城兵は本丸にこもり、兵糧が尽きるまで持ちこたえる
@@ -390,8 +395,8 @@ function* battleAtG(a,plans,battles){
       if(sg)sg.left-=1;else S.siege[a]={by:lead,left:ht,y:yearNow()};
       const L=S.siege[a].left;rec.siege=L;
       news(`${A[a].n}の城兵は本丸にこもって籠城した（${hn(lead)}が包囲。あと${L}ターンで兵糧が尽きる）`);
-      if(owner===S.me){S.log.push({y:yearNow(),t:`${A[a].n}が${hn(lead)}に包囲され、籠城する（あと${L}ターン）`});S.events.push({h:S.me,t:`${A[a].n}は籠城している。あと${L}ターンのうちに軍勢を送って包囲をやぶらないと落城する。`});}
-      if(rec.attHs.includes(S.me))S.events.push({h:S.me,t:`${A[a].n}の城兵は本丸にこもった。包囲をつづければ、あと${L}ターンで落城する（軍勢を${A[a].n}から動かさないこと）。`});
+      if(isHu(owner)){S.log.push({h:owner,y:yearNow(),t:`${A[a].n}が${hn(lead)}に包囲され、籠城する（あと${L}ターン）`});S.events.push({h:owner,t:`${A[a].n}は籠城している。あと${L}ターンのうちに軍勢を送って包囲をやぶらないと落城する。`});}
+      for(const hh of rec.attHs.filter(isHu))S.events.push({h:hh,t:`${A[a].n}の城兵は本丸にこもった。包囲をつづければ、あと${L}ターンで落城する（軍勢を${A[a].n}から動かさないこと）。`});
       if(SA.me||SD.me)yield {k:'end',rec};
       return;}
     if(SA.me||SD.me)yield {k:'end',rec};
@@ -402,7 +407,7 @@ function* battleAtG(a,plans,battles){
       return;
     }else{
       for(const x of attArm)retreat(x,x.prev,plans);
-      if(S.siege&&S.siege[a]&&!armiesAt(a).some(x=>rel(x.h,owner)!=='self'&&!friendly(x.h,owner))){delete S.siege[a];news(`${A[a].n}の包囲がやぶられた`);if(owner===S.me)S.log.push({y:yearNow(),t:`${A[a].n}の包囲をやぶる`});}
+      if(S.siege&&S.siege[a]&&!armiesAt(a).some(x=>rel(x.h,owner)!=='self'&&!friendly(x.h,owner))){delete S.siege[a];news(`${A[a].n}の包囲がやぶられた`);if(isHu(owner))S.log.push({h:owner,y:yearNow(),t:`${A[a].n}の包囲をやぶる`});}
       // ほかに攻める家がいればもう一度
     }
   }
@@ -424,9 +429,9 @@ function* fieldBattleG(sideA,sideB,a,plans,battles,opt={}){
   const rec={name:A[a].n+'の戦い',y:yearNow(),a,att:ha,attHs:[...new Set(sideA.map(x=>x.h))],def:null,defHs:[...new Set(sideB.map(x=>x.h))],r,cA:snapA,cD:snapD,ter:A[a].ter,field:true,zoc:!!opt.zoc,attN:Math.round(sum(r.A0)),defN:Math.round(sum(r.D0)),dead:rec0.dead||undefined,ev:r.events};
   battles.push(rec);
   news(`${rec.name}（${A[a].pv}国・野戦）：${hn(wh)}が${hn(lh)}を破った`);
-  if(sideA.concat(sideB).some(x=>x.h===S.me)){const won=win.some(x=>x.h===S.me);
-    S.log.push({y:yearNow(),t:`${rec.name}（野戦）で${won?'勝ち、そのまま進む':'敗れ、退く'}（相手：${won?hn(lh):hn(wh)}）`,battle:true});
-    S.myBattles=(S.myBattles||[]).concat({name:rec.name,y:yearNow(),won,vs:won?hn(lh):hn(wh),pv:A[a].pv});}
+  for(const hh of [...new Set(sideA.concat(sideB).map(x=>x.h))].filter(isHu)){const won=win.some(x=>x.h===hh);
+    S.log.push({h:hh,y:yearNow(),t:`${rec.name}（野戦）で${won?'勝ち、そのまま進む':'敗れ、退く'}（相手：${won?hn(lh):hn(wh)}）`,battle:true});
+    S.myBattles=(S.myBattles||[]).concat({h:hh,name:rec.name,y:yearNow(),won,vs:won?hn(lh):hn(wh),pv:A[a].pv});}
   // 負けた方：勝った方の行き先をさけて、ターンのはじめにいた領地（だめなら近くの自分の領地）へ退く
   const avoid=new Set(win.map(x=>{const pl=plans[x.id];return pl&&!pl.stop&&pl.steps[pl.i]?pl.steps[pl.i].a:x.a;}));
   for(const x of lose){if(plans[x.id])plans[x.id].stop=true;if(totU(x)<1){S.armies=S.armies.filter(y=>y!==x);continue;}
@@ -489,7 +494,7 @@ function refill(h){
     }
   }
 }
-function newArmy(h,a,bi){const ar={id:uid++,h,a,cmd:bi,u:[]};ar.g=guardMax(ar);S.armies.push(ar);return ar;}
+function newArmy(h,a,bi){const ar={id:nid(),h,a,cmd:bi,u:[]};ar.g=guardMax(ar);S.armies.push(ar);return ar;}
 function upkeep(h){if(!areasOf(h).length)return 0;   // 領地のない軍勢（浪人の軍勢・領地なしの家臣）は維持費がかからない
   return Math.ceil(troopsOf(h)/(typeof UPKEEP_DIV==='number'?UPKEEP_DIV:30));}
 // 年貢：家臣は収入の一部を主君に納める（NENGU_RATE は data2.js）
@@ -522,7 +527,7 @@ function applyPolicy(h,id){
   if(id==='soubuji')news(`${hn(h)}が関白となり、惣無事令を出した`);
   if(id==='kenchi')news(`${hn(h)}が検地を行った`);
   if(id==='sonae')news(`${hn(h)}が軍勢を兵種ごとの備に組みなおした`);
-  if(h===S.me)S.log.push({y:yearNow(),t:`政策「${P.n}」を行う`});
+  if(isHu(h))S.log.push({h:h,y:yearNow(),t:`政策「${P.n}」を行う`});
 }
 
 /* ---------- コンピューターの大名 ---------- */
@@ -610,29 +615,31 @@ function aiHonor(orders){
   }
 }
 function aiDiplomacy(){
-  const ids=Object.keys(H).filter(id=>alive(id)&&id!==S.me&&!(S.lord&&S.lord[id]));
+  const ids=Object.keys(H).filter(id=>alive(id)&&!isHu(id)&&!(S.lord&&S.lord[id]));
   // 弱い家が、強い敵の軍門に下る／力をつけた家臣が独立する
   for(const a of shuffle(ids.slice())){if(S.lord&&S.lord[a])continue;
     const ka=campKoku(a);const strong=neighborsOf(a).map(topOf).filter((b,i,l)=>l.indexOf(b)===i&&b!==a&&alive(b)&&rel(a,b)==='teki'&&campKoku(b)>=ka*3&&ka<40);
     if(!strong.length||Math.random()>0.12)continue;const b=strong.sort((x,y)=>campKoku(y)-campKoku(x))[0];
-    if(b===topOf(S.me)&&b===S.me){S.inbox=S.inbox||[];S.inboxNext=S.inboxNext||[];S.inboxNext.push({from:a,type:'kashin',t:`${hn(a)}より：これ以上は戦えぬ。貴家の軍門に下り、家臣に加えていただきたい。`});continue;}
-    if(b===topOf(S.me))continue;
+    if(isHu(b)){S.inbox=S.inbox||[];S.inboxNext=S.inboxNext||[];S.inboxNext.push({to:b,from:a,type:'kashin',t:`${hn(a)}より：これ以上は戦えぬ。貴家の軍門に下り、家臣に加えていただきたい。`});continue;}
+    if(humans().some(x=>topOf(x)===b))continue;
     makeVassal(a,b);news(`${hn(a)}が${hn(b)}の軍門に下り、家臣となった`);}
-  for(const v in (S.lord||{})){if(v===S.me||!alive(v))continue;const L=S.lord[v];
-    if(kokuOf(v)>kokuOf(L)*0.8&&Math.random()<0.15){releaseVassal(v,'teki');news(`${hn(v)}が${hn(L)}からはなれて独立し、両家は敵対した`);if(L===S.me){S.log.push({y:yearNow(),t:`家臣の${hn(v)}が独立し、敵となった`});S.events.push({h:S.me,t:`家臣の${hn(v)}がそむいて独立した。これより${hn(v)}は敵である。`});}}}
+  for(const v in (S.lord||{})){if(isHu(v)||!alive(v))continue;const L=S.lord[v];
+    if(kokuOf(v)>kokuOf(L)*0.8&&Math.random()<0.15){releaseVassal(v,'teki');news(`${hn(v)}が${hn(L)}からはなれて独立し、両家は敵対した`);if(isHu(L)){S.log.push({h:L,y:yearNow(),t:`家臣の${hn(v)}が独立し、敵となった`});S.events.push({h:L,t:`家臣の${hn(v)}がそむいて独立した。これより${hn(v)}は敵である。`});}}}
   for(let i=0;i<5;i++){
-    const a=ids[rnd(ids.length)],nb=neighborsOf(a).map(topOf).filter((b,j,l)=>l.indexOf(b)===j&&b!==topOf(S.me)&&b!==a&&alive(b));if(!nb.length)continue;
+    const a=ids[rnd(ids.length)],nb=neighborsOf(a).map(topOf).filter((b,j,l)=>l.indexOf(b)===j&&!humans().some(x=>topOf(x)===b)&&b!==a&&alive(b));if(!nb.length)continue;
     const b=nb[rnd(nb.length)];const r=rel(a,b);
     if(r==='none'&&Math.random()<.5){setRel(a,b,Math.random()<.5?'domei':'fusen');news(`${hn(a)}と${hn(b)}が${rel(a,b)==='domei'?'同盟':'不可侵の約束'}を結んだらしい`);}
     else if((r==='domei'||r==='fusen')&&Math.random()<.12){setRel(a,b,'teki');news(`${hn(a)}と${hn(b)}の約束が破れた`);}
   }
 }
 function aiLetters(){
-  const nb=(S.lord&&S.lord[S.me])?[]:neighborsOf(S.me).filter(h=>alive(h)&&!(S.lord&&S.lord[h]));S.inbox=(S.inboxNext||[]).filter(m=>alive(m.from)&&!(S.lord&&S.lord[m.from]));S.inboxNext=[];
-  for(const h of shuffle(nb).slice(0,2)){const r=rel(h,S.me);
-    if(r==='none'&&Math.random()<.45)S.inbox.push({from:h,type:'fusen',t:`${hn(h)}より：たがいに兵を向けぬ約束をしたい。`});
-    else if(r==='fusen'&&Math.random()<.3)S.inbox.push({from:h,type:'domei',t:`${hn(h)}より：われらと同盟を結ばぬか。`});
-    else if(r==='teki'&&Math.random()<.2)S.inbox.push({from:h,type:'fusen',t:`${hn(h)}より：争いはもう十分だ。和睦しよう。`});}
+  S.inbox=(S.inboxNext||[]).filter(m=>alive(m.from)&&!(S.lord&&S.lord[m.from]));S.inboxNext=[];
+  for(const me of humans()){if(!alive(me))continue;
+    const nb=(S.lord&&S.lord[me])?[]:neighborsOf(me).filter(h=>alive(h)&&!isHu(h)&&!(S.lord&&S.lord[h]));
+    for(const h of shuffle(nb).slice(0,2)){const r=rel(h,me);
+      if(r==='none'&&Math.random()<.45)S.inbox.push({to:me,from:h,type:'fusen',t:`${hn(h)}より：たがいに兵を向けぬ約束をしたい。`});
+      else if(r==='fusen'&&Math.random()<.3)S.inbox.push({to:me,from:h,type:'domei',t:`${hn(h)}より：われらと同盟を結ばぬか。`});
+      else if(r==='teki'&&Math.random()<.2)S.inbox.push({to:me,from:h,type:'fusen',t:`${hn(h)}より：争いはもう十分だ。和睦しよう。`});}}
 }
 
 /* ---------- ターンを終える ---------- */
@@ -641,17 +648,17 @@ function* endTurnG(){
   S.events=[];S.changes=[];
   const orders={};
   for(const id in S.orders)orders[id]=S.orders[id];
-  for(const h in H){if(h!==S.me&&alive(h))aiTurn(h,orders);}
+  for(const h in H){if(!isHu(h)&&alive(h))aiTurn(h,orders);}
   aiHonor(orders);
   // 約束やぶり
   for(const ar of S.armies){const p=orders[ar.id];if(!p||!p.length)continue;const d=p[p.length-1];const o=S.own[d];
-    if(o&&H[o]&&o!==ar.h&&friendly(ar.h,o)){S.promises.push({y:yearNow(),a:ar.h,b:o,t:`${hn(ar.h)}が約束をやぶり、${hn(o)}の${A[d].n}を攻めた`});setRel(ar.h,o,'teki');news(`${hn(ar.h)}が約束をやぶって${hn(o)}を攻めた`);if(ar.h===S.me||o===S.me)S.log.push({y:yearNow(),t:`${hn(ar.h)}が約束をやぶり、${hn(o)}の${A[d].n}を攻める`});}}
+    if(o&&H[o]&&o!==ar.h&&friendly(ar.h,o)){S.promises.push({y:yearNow(),a:ar.h,b:o,t:`${hn(ar.h)}が約束をやぶり、${hn(o)}の${A[d].n}を攻めた`});setRel(ar.h,o,'teki');news(`${hn(ar.h)}が約束をやぶって${hn(o)}を攻めた`);for(const hh of [ar.h,o].filter(isHu))S.log.push({h:hh,y:yearNow(),t:`${hn(ar.h)}が約束をやぶり、${hn(o)}の${A[d].n}を攻める`});}}
   // 中立（とくに約束のない）家の領地に軍勢を進めたら、その家とは敵対になる
   for(const ar of S.armies){const p=orders[ar.id];if(!p||!p.length)continue;
     for(const d of p){const o=S.own[d];if(!o||!H[o]||o===ar.h||rel(ar.h,o)!=='none')continue;
       setRel(ar.h,o,'teki');news(`${hn(ar.h)}が${hn(o)}の${A[d].n}に攻めこみ、両家は敵対した`);
-      if(o===S.me){S.log.push({y:yearNow(),t:`${hn(ar.h)}が${A[d].n}に攻めこんできた。${hn(ar.h)}は敵になった`});S.events.push({h:S.me,t:`${hn(ar.h)}が${A[d].n}に攻めこんできた。これより${hn(ar.h)}は敵（赤色）である。`});}
-      if(ar.h===S.me){S.log.push({y:yearNow(),t:`${hn(o)}の${A[d].n}に攻めこみ、${hn(o)}と敵対する`});S.events.push({h:S.me,t:`${hn(o)}の${A[d].n}に攻めこんだため、${hn(o)}は敵（赤色）になった。`});}
+      if(isHu(o)){S.log.push({h:o,y:yearNow(),t:`${hn(ar.h)}が${A[d].n}に攻めこんできた。${hn(ar.h)}は敵になった`});S.events.push({h:o,t:`${hn(ar.h)}が${A[d].n}に攻めこんできた。これより${hn(ar.h)}は敵（赤色）である。`});}
+      if(isHu(ar.h)){S.log.push({h:ar.h,y:yearNow(),t:`${hn(o)}の${A[d].n}に攻めこみ、${hn(o)}と敵対する`});S.events.push({h:ar.h,t:`${hn(o)}の${A[d].n}に攻めこんだため、${hn(o)}は敵（赤色）になった。`});}
       break;}}
   S.lastOrders=JSON.parse(JSON.stringify(orders));
   S.lastStart={};S.lastH={};S.armies.forEach(x=>{S.lastStart[x.id]=x.a;S.lastH[x.id]=x.h;});
@@ -660,14 +667,14 @@ function* endTurnG(){
   // 籠城：包囲がつづいていれば兵糧がへる。尽きたら落城。包囲の軍勢がいなくなれば包囲はとける
   for(const a in (S.siege||{})){const sg=S.siege[a];const owner=S.own[a];
     const bes=armiesAt(a).filter(x=>owner&&x.h!==owner&&!friendly(x.h,owner));
-    if(!owner||!bes.length){delete S.siege[a];if(owner){news(`${A[a].n}の包囲がとけた`);if(owner===S.me)S.log.push({y:yearNow(),t:`${A[a].n}の包囲がとけた`});}continue;}
+    if(!owner||!bes.length){delete S.siege[a];if(owner){news(`${A[a].n}の包囲がとけた`);if(isHu(owner))S.log.push({h:owner,y:yearNow(),t:`${A[a].n}の包囲がとけた`});}continue;}
     sg.left-=1;
     if(sg.left<=0){const by=bes.sort((p,q)=>totU(q)-totU(p))[0].h;const arms=bes.filter(x=>allied(x.h,by));delete S.siege[a];S.gar[a]=zero();capture(a,by,arms,{});
-      news(`${A[a].n}は兵糧が尽きて落城した（${hn(by)}が手に入れた）`);if(owner===S.me)S.events.push({h:S.me,t:`${A[a].n}は兵糧が尽き、落城した。`});}
-    else{if(owner===S.me)S.events.push({h:S.me,t:`${A[a].n}は籠城をつづけている。あと${sg.left}ターンで兵糧が尽きる。`});}}
+      news(`${A[a].n}は兵糧が尽きて落城した（${hn(by)}が手に入れた）`);if(isHu(owner))S.events.push({h:owner,t:`${A[a].n}は兵糧が尽き、落城した。`});}
+    else{if(isHu(owner))S.events.push({h:owner,t:`${A[a].n}は籠城をつづけている。あと${sg.left}ターンで兵糧が尽きる。`});}}
   for(const c of S.changes){
-    if(c.to===S.me)S.log.push({y:yearNow(),t:`${A[c.a].n}（${A[c.a].pv}）を手に入れる${c.follow?`（${A[c.follow].n}が落ちたため）`:c.from?`（${hn(c.from)}から）`:''}`});
-    else if(c.from===S.me)S.log.push({y:yearNow(),t:`${A[c.a].n}（${A[c.a].pv}）を${hn(c.to)}に奪われる`});
+    if(isHu(c.to))S.log.push({h:c.to,y:yearNow(),t:`${A[c.a].n}（${A[c.a].pv}）を手に入れる${c.follow?`（${A[c.follow].n}が落ちたため）`:c.from?`（${hn(c.from)}から）`:''}`});
+    else if(isHu(c.from))S.log.push({h:c.from,y:yearNow(),t:`${A[c.a].n}（${A[c.a].pv}）を${hn(c.to)}に奪われる`});
     if(!c.follow)news(`${hn(c.to)}が${A[c.a].n}（${A[c.a].pv}）を${c.from?hn(c.from)+'から奪った':'手に入れた'}${isMain(c.a)?'。'+A[c.a].pv+'国の拠点の城である':''}`);
   }
   S.orders={};S.req=[];S.wabo={};
@@ -677,12 +684,12 @@ function* endTurnG(){
     const h=S.own[a];if(!h||!H[h])continue;if(armiesAt(a).some(x=>x.h===h))continue;if(isHonjo(a,h))continue;
     let p=(typeof IKKI_BASE==='number'?IKKI_BASE:0.015)+(IKKO.includes(a)?0.07:0)+(nbr(a).some(b=>A[b].k==='寺'&&!S.own[b])?0.04:0);
     if(S.pol[h].bunkoku)p*=0.4;if(S.pol[h].kirisuto&&IKKO.includes(a))p+=0.05;if(S.pol[h].katana)p=0;
-    if(Math.random()<p){delete S.own[a];S.gar[a]=garFull(a);S.ikki.push({a,h});news(`${A[a].n}で一揆が起き、${hn(h)}の支配からはなれた`);if(h===S.me)S.log.push({y:yearNow(),t:`${A[a].n}で一揆が起き、地域を失う`});}
+    if(Math.random()<p){delete S.own[a];S.gar[a]=garFull(a);S.ikki.push({a,h});news(`${A[a].n}で一揆が起き、${hn(h)}の支配からはなれた`);if(isHu(h))S.log.push({h:h,y:yearNow(),t:`${A[a].n}で一揆が起き、地域を失う`});}
   }
   // 家臣の年貢（収入の計算は地域が決まってから）
   const NG={};for(const v in (S.lord||{})){if(!alive(v)||!alive(S.lord[v]))continue;const g=nenguOut(v);NG[v]=(NG[v]||0)-g;NG[S.lord[v]]=(NG[S.lord[v]]||0)+g;
-    if(v===S.me)S.log.push({y:yearNow(),t:`主君の${hn(S.lord[v])}に年貢として金${g}を納める`});else if(S.lord[v]===S.me)S.log.push({y:yearNow(),t:`家臣の${hn(v)}から年貢として金${g}が届く`});}
-  for(const h in H){if(!alive(h))continue;S.gold[h]+=income(h)-upkeep(h)+(NG[h]||0);if(S.gold[h]<0){for(const x of armiesOf(h))for(const u of x.u)u.n=Math.floor(u.n*0.85*10)/10;S.gold[h]=0;if(h===S.me)S.events.push({h,t:'金が足りず、兵の一部が逃げた'});}}
+    if(isHu(v))S.log.push({h:v,y:yearNow(),t:`主君の${hn(S.lord[v])}に年貢として金${g}を納める`});if(isHu(S.lord[v]))S.log.push({h:S.lord[v],y:yearNow(),t:`家臣の${hn(v)}から年貢として金${g}が届く`});}
+  for(const h in H){if(!alive(h))continue;S.gold[h]+=income(h)-upkeep(h)+(NG[h]||0);if(S.gold[h]<0){for(const x of armiesOf(h))for(const u of x.u)u.n=Math.floor(u.n*0.85*10)/10;S.gold[h]=0;if(isHu(h))S.events.push({h,t:'金が足りず、兵の一部が逃げた'});}}
   for(const a of AREAS){if(S.siege&&S.siege[a.id])continue;const f=garFull(a.id);const g=S.gar[a.id];for(const t of TORDER)g[t]=Math.min(f[t],g[t]+Math.ceil(f[t]*0.5));}
   for(const x of S.armies){x.rec=0;x.g=guardMax(x);}   // 旗本は年ごとにそろいなおす
   for(const h in H)if(alive(h))refill(h);
@@ -698,16 +705,16 @@ function* endTurnG(){
       const by=lastC?topOf(lastC.to):null;
       if(!was&&by&&alive(by)&&!(S.lord&&S.lord[h])&&by!==h){makeVassal(h,by);
         news(`${hn(h)}はすべての領地を失い、${hn(by)}の家臣となった（軍勢だけが残る）`);
-        S.log.push({y:yearNow(),t:`すべての領地を失い、${hn(by)}の家臣となる（軍勢は残る）`});
-        if(h===S.me)S.events.push({h,t:`すべての領地を失った。${hn(by)}の家臣となり、軍勢だけで主君のために戦う。「独立する」の書状で下剋上すれば、領地のない軍勢だけで、ふたたび領地を取りにいける。`});}
-      else if(!was){news(`${hn(h)}はすべての領地を失ったが、軍勢は残っている`);if(h===S.me)S.events.push({h,t:'すべての領地を失った。領地のない軍勢だけで、ふたたび城を取りにいこう（領地がないあいだは維持費がかからない）。'});}
+        S.log.push({h,y:yearNow(),t:`すべての領地を失い、${hn(by)}の家臣となる（軍勢は残る）`});
+        if(isHu(h))S.events.push({h,t:`すべての領地を失った。${hn(by)}の家臣となり、軍勢だけで主君のために戦う。「独立する」の書状で下剋上すれば、領地のない軍勢だけで、ふたたび領地を取りにいける。`});}
+      else if(!was){news(`${hn(h)}はすべての領地を失ったが、軍勢は残っている`);if(isHu(h))S.events.push({h,t:'すべての領地を失った。領地のない軍勢だけで、ふたたび城を取りにいこう（領地がないあいだは維持費がかからない）。'});}
       continue;}
-    S.armies=S.armies.filter(x=>x.h!==h);S.dead[h]=yearNow();news(`${hn(h)}が滅んだ`);if(h===S.me)S.log.push({y:yearNow(),t:'すべての地域を失い、家が滅ぶ'});
+    S.armies=S.armies.filter(x=>x.h!==h);S.dead[h]=yearNow();news(`${hn(h)}が滅んだ`);if(isHu(h))S.log.push({h:h,y:yearNow(),t:'すべての地域を失い、家が滅ぶ'});
     if(S.landless)delete S.landless[h];}
   // 領地を取りもどしたら、領地なしの印をはずす
   for(const h in (S.landless||{}))if(areasOf(h).length){delete S.landless[h];news(`${hn(h)}がふたたび領地を手に入れた`);}
   // 主君が滅んだ家臣は独立する。滅んだ家臣は主従から外す
-  for(const v in (S.lord||{})){if(S.dead[v]){delete S.lord[v];continue;}const L=S.lord[v];if(S.dead[L]){delete S.lord[v];for(const k in S.rel)if(k.split('|').includes(v))delete S.rel[k];news(`主君の${hn(L)}が滅び、${hn(v)}は独立した`);if(v===S.me)S.events.push({h:S.me,t:`主君の${hn(L)}が滅んだ。わが家は独立した。`});}}
+  for(const v in (S.lord||{})){if(S.dead[v]){delete S.lord[v];continue;}const L=S.lord[v];if(S.dead[L]){delete S.lord[v];for(const k in S.rel)if(k.split('|').includes(v))delete S.rel[k];news(`主君の${hn(L)}が滅び、${hn(v)}は独立した`);if(isHu(v))S.events.push({h:v,t:`主君の${hn(L)}が滅んだ。わが家は独立した。`});}}
 }
 function nextTurn(){
   snapshot();
@@ -717,7 +724,7 @@ function nextTurn(){
   S.turn++;
   const y=yearNow();
   S.wabo=S.waboNext||{};S.waboNext={};
-  if(y===1562&&alive('oda')&&alive('matsudaira')&&S.me!=='oda'&&S.me!=='matsudaira'){setRel('oda','matsudaira','domei');setRel('imagawa','matsudaira','teki');news('松平家が今川家からはなれ、織田家と同盟を結んだ（清洲同盟）');}
+  if(y===1562&&alive('oda')&&alive('matsudaira')&&!isHu('oda')&&!isHu('matsudaira')){setRel('oda','matsudaira','domei');setRel('imagawa','matsudaira','teki');news('松平家が今川家からはなれ、織田家と同盟を結んだ（清洲同盟）');}
   if(y===1582)honnoji();
   aiDiplomacy();aiLetters();
   save();return true;
@@ -730,7 +737,7 @@ function honnoji(){
   S.armies=S.armies.filter(x=>x!==ar);
   if(S.own[ar.a]===top&&!isHonjo(ar.a,top)){delete S.own[ar.a];S.gar[ar.a]=garFull(ar.a);}
   news(`本能寺の変：${hn(top)}の家臣がそむき、${A[ar.a].n}の軍勢を失った`);
-  if(top===S.me)S.log.push({y:1581,t:`家臣がそむき、${A[ar.a].n}の軍勢を失う（本能寺の変）`});
+  if(isHu(top))S.log.push({h:top,y:1581,t:`家臣がそむき、${A[ar.a].n}の軍勢を失う（本能寺の変）`});
   S.honno={h:top,a:ar.a};
 }
 
@@ -748,29 +755,29 @@ const LETTER_TYPES=[
  {id:'dokuritsu',n:'主君からはなれて独立する',d:'家臣をやめる。主君の家とは敵対になる'}
 ];
 // いま送れる書状の種類（家臣のあいだは、外交は主君にまかせる）
-function letterTypesFor(to){const me=S.me;const vas=S.lord&&S.lord[me];
+function letterTypesFor(to,from){const me=from||S.me;const vas=S.lord&&S.lord[me];
   if(vas)return S.lord[me]===to?['support','gift','dokuritsu']:sameCamp(me,to)?['support','gift']:['gift'];
   if(sameCamp(me,to))return ['support','gift'];
   return LETTER_TYPES.map(t=>t.id).filter(k=>k!=='dokuritsu');}
-function sendLetter(to,type,target,text){
-  const me=S.me;const r=rel(me,to);const myN=troopsOf(me),thN=troopsOf(to);
+function sendLetter(to,type,target,text,from){
+  const me=from||S.me;const r=rel(me,to);const myN=troopsOf(me),thN=troopsOf(to);
   const enemyOfEnemy=neighborsOf(to).some(x=>x!==me&&rel(to,x)==='teki'&&rel(me,x)==='teki');
   let ok=false,reply='';
   const myK=campKoku(me),thK=campKoku(to);
-  if(!letterTypesFor(to).includes(type)){reply=S.lord&&S.lord[me]?`（家臣なので、ほかの家との外交は主君の${hn(S.lord[me])}が行う）`:'（この書状は送れない）';}
+  if(!letterTypesFor(to,me).includes(type)){reply=S.lord&&S.lord[me]?`（家臣なので、ほかの家との外交は主君の${hn(S.lord[me])}が行う）`:'（この書状は送れない）';}
   else if(S.lord&&S.lord[to]&&!sameCamp(me,to)){reply=`わが家は${hn(S.lord[to])}の家臣である。話は主君にしてほしい。`;}
   else if(type==='kudaru'){const p=thK<myK*0.8?0.08:r==='teki'?0.75:0.9;ok=Math.random()<p;
-    if(ok){makeVassal(me,to);reply='よくぞ決心された。これより貴家はわが家の家臣である。ともに天下をめざそう。';S.log.push({y:yearNow(),t:`${hn(to)}の軍門に下り、家臣となる`});news(`${hn(me)}が${hn(to)}の軍門に下り、家臣となった`);}
+    if(ok){makeVassal(me,to);reply='よくぞ決心された。これより貴家はわが家の家臣である。ともに天下をめざそう。';S.log.push({h:me,y:yearNow(),t:`${hn(to)}の軍門に下り、家臣となる`});news(`${hn(me)}が${hn(to)}の軍門に下り、家臣となった`);}
     else reply='貴家ほどの家を家臣にするわけにはいかぬ。';}
   else if(type==='kosan'){const q=myK/Math.max(1,thK);const p=q>=3?0.7:q>=2?0.35:0.03;ok=Math.random()<p;
-    if(ok){makeVassal(to,me);reply='……やむをえぬ。貴家の軍門に下ろう。';S.log.push({y:yearNow(),t:`${hn(to)}が軍門に下り、家臣となる`});news(`${hn(to)}が${hn(me)}の軍門に下り、家臣となった`);}
+    if(ok){makeVassal(to,me);reply='……やむをえぬ。貴家の軍門に下ろう。';S.log.push({h:me,y:yearNow(),t:`${hn(to)}が軍門に下り、家臣となる`});news(`${hn(to)}が${hn(me)}の軍門に下り、家臣となった`);}
     else{reply=q<1.5?'われらを家臣にしようなど、思い上がりもはなはだしい。':'まだ、われらは戦える。';if(q<1.5&&r!=='teki')setRel(me,to,'teki');}}
-  else if(type==='dokuritsu'){if(S.lord[me]!==to)reply='（あなたの主君ではない）';else{releaseVassal(me,'teki');ok=true;reply='恩知らずめ。次に会うのは戦場だ。';S.log.push({y:yearNow(),t:`${hn(to)}からはなれて独立する`});news(`${hn(me)}が${hn(to)}からはなれて独立した`);}}
+  else if(type==='dokuritsu'){if(S.lord[me]!==to)reply='（あなたの主君ではない）';else{releaseVassal(me,'teki');ok=true;reply='恩知らずめ。次に会うのは戦場だ。';S.log.push({h:me,y:yearNow(),t:`${hn(to)}からはなれて独立する`});news(`${hn(me)}が${hn(to)}からはなれて独立した`);}}
   else if(type==='wabo'){if(r!=='teki')reply='（敵対していない）';else{
     const q=myK/Math.max(1,thK);
     let p=0.4+(q>=1.3?0.2:q<0.7?-0.2:0)+(myN>=thN?0.1:-0.1)+(enemyOfEnemy?0.15:0);
     const pay=S.gold[me]>=5;if(pay)p+=0.15;p=Math.max(0.05,Math.min(0.9,p));ok=Math.random()<p;
-    if(ok){if(pay){S.gold[me]-=5;S.gold[to]+=5;}setRel(me,to,'none');reply=pay?'金5、たしかに受け取った。和睦しよう。これよりたがいに兵を引く。':'よかろう。和睦しよう。これよりたがいに兵を引く。';S.log.push({y:yearNow(),t:`${hn(to)}と和睦する${pay?'（金5をそえる）':''}`});news(`${hn(me)}と${hn(to)}が和睦した`);}
+    if(ok){if(pay){S.gold[me]-=5;S.gold[to]+=5;}setRel(me,to,'none');reply=pay?'金5、たしかに受け取った。和睦しよう。これよりたがいに兵を引く。':'よかろう。和睦しよう。これよりたがいに兵を引く。';S.log.push({h:me,y:yearNow(),t:`${hn(to)}と和睦する${pay?'（金5をそえる）':''}`});news(`${hn(me)}と${hn(to)}が和睦した`);}
     else reply=q<0.8?'勝ちいくさの最中に、なぜ兵を引かねばならぬ。':'まだ決着はついておらぬ。和睦はできぬ。';}}
   else if(type==='domei'){const p=(r==='teki'?0.15:r==='fusen'?0.6:0.4)+(myN>=thN?0.15:0)+(enemyOfEnemy?0.2:0);ok=Math.random()<p;if(ok){setRel(me,to,'domei');reply='よかろう。これより両家は同盟である。';}else reply=r==='teki'?'これまでのいきさつがある。同盟など結べぬ。':'今はまだ、その時ではない。';}
   else if(type==='fusen'){const p=(r==='teki'?0.3:0.65)+(myN>thN?0.1:0);ok=Math.random()<p;if(ok){if(r!=='domei')setRel(me,to,'fusen');reply='承知した。たがいに兵を向けぬことを約束しよう。';}else reply='約束はできぬ。';}
@@ -783,13 +790,71 @@ function sendLetter(to,type,target,text){
   else if(type==='threat'){if(myN>=thN*2&&neighborsOf(me).includes(to)){const g=Math.min(S.gold[to],8);S.gold[to]-=g;S.gold[me]+=g;ok=true;reply=`……わかった。金${g}を差し出そう。`;if(Math.random()<.5)setRel(me,to,'teki');}else{reply='われらを見くびるな。';setRel(me,to,'teki');}}
   const L={y:yearNow(),from:me,to,type,text:text||LETTER_TYPES.find(x=>x.id===type).n+(target?`（${A[target].n}）`:''),reply,ok};
   S.letters.push(L);
-  if(ok&&(type==='domei'||type==='fusen'))S.log.push({y:yearNow(),t:`${hn(to)}と${type==='domei'?'同盟':'不可侵の約束'}を結ぶ`});
+  if(ok&&(type==='domei'||type==='fusen'))S.log.push({h:me,y:yearNow(),t:`${hn(to)}と${type==='domei'?'同盟':'不可侵の約束'}を結ぶ`});
   return L;
 }
+
+/* ---------- 人どうしの書状（みんなで遊ぶ）：相手の返事（承諾・拒絶）で結果が決まる ---------- */
+const HU_NOASK=['break','dokuritsu'];   // 返事を待たずに決まる書状
+// 送れるかどうか。送れないときは理由を返す
+function humanLetterWhy(from,to,type){const r=rel(from,to);
+  if(!letterTypesFor(to,from).includes(type))return S.lord&&S.lord[from]?`家臣なので、ほかの家との外交は主君の${hn(S.lord[from])}が行う`:'この書状は送れない';
+  if(S.lord&&S.lord[to]&&!sameCamp(from,to))return `${hn(to)}は${hn(S.lord[to])}の家臣。話は主君にする`;
+  if(type==='wabo'&&r!=='teki')return '敵対していない';
+  if(type==='break'&&r!=='domei'&&r!=='fusen')return '約束をしていない';
+  if(type==='domei'&&r==='domei')return 'すでに同盟している';
+  if(type==='fusen'&&(r==='fusen'||r==='domei'))return 'すでに約束している';
+  if(type==='gift'&&S.gold[from]<5)return '金が足りない';
+  if(type==='dokuritsu'&&!(S.lord&&S.lord[from]===to))return 'あなたの主君ではない';
+  if(type==='threat')return '人が動かす家には送れない';
+  return '';}
+function humanLetter(from,to,type,target,ok,text){
+  const r=rel(from,to);const tn=(LETTER_TYPES.find(x=>x.id===type)||{}).n||type;
+  if(type==='break'){ok=r==='domei'||r==='fusen';if(ok){setRel(from,to,'teki');S.promises.push({y:yearNow(),a:from,b:to,t:`${hn(from)}が${hn(to)}との約束を取り消した`});news(`${hn(from)}と${hn(to)}の約束が破れた`);}}
+  else if(type==='dokuritsu'){ok=!!(S.lord&&S.lord[from]===to);if(ok){releaseVassal(from,'teki');news(`${hn(from)}が${hn(to)}からはなれて独立した`);}}
+  else if(ok){
+    if(type==='domei'){setRel(from,to,'domei');news(`${hn(from)}と${hn(to)}が同盟を結んだ`);}
+    else if(type==='fusen'){if(r!=='domei')setRel(from,to,'fusen');}
+    else if(type==='wabo'){if(r==='teki'){setRel(from,to,'none');news(`${hn(from)}と${hn(to)}が和睦した`);}}
+    else if(type==='gift'){const g=Math.max(0,Math.min(5,S.gold[from]));S.gold[from]-=g;S.gold[to]+=g;}
+    else if(type==='kudaru'){makeVassal(from,to);news(`${hn(from)}が${hn(to)}の軍門に下り、家臣となった`);}
+    else if(type==='kosan'){makeVassal(to,from);news(`${hn(to)}が${hn(from)}の軍門に下り、家臣となった`);}}
+  const res=ok?'承諾':'拒絶';const tg=target&&A[target]?`（${A[target].n}）`:'';
+  if(isHu(from))S.log.push({h:from,y:yearNow(),t:`${hn(to)}へ「${tn}${tg}」の書状を送る → ${HU_NOASK.includes(type)?'決まった':res}`});
+  if(isHu(to))S.log.push({h:to,y:yearNow(),t:`${hn(from)}から「${tn}${tg}」の書状が届く → ${HU_NOASK.includes(type)?'決まった':res}`});
+  S.letters.push({y:yearNow(),from,to,type,text:text||tn+tg,reply:res,ok});
+  return ok;}
+
+/* ---------- 家の操作 ----------
+   画面での操作は、すべてここを通す。みんなで遊ぶときは、同じ操作をターンの終わりに親の画面でも行う（番号もそろう） */
+const armyOf=(h,id)=>S.armies.find(x=>x.id===id&&x.h===h);
+const ACTS={
+  recruit(h,{ar,t}){const x=armyOf(h,ar);if(!x||!recruit(h,x,t))return false;S.log.push({h,y:yearNow(),t:`${A[x.a].n}で${TYPES[t].full}を1000人集める`});return true;},
+  disband(h,{ar,ids}){const x=armyOf(h,ar);if(!x||!ids||!ids.length)return false;disband(x,ids);S.log.push({h,y:yearNow(),t:`${A[x.a].n}で${ids.length}部隊を解散する`});if(!S.armies.includes(x))delete S.orders[x.id];return true;},
+  split(h,{ar,ids}){const x=armyOf(h,ar);const fb=freeBusho(h);if(!x||!fb.length)return false;
+    let move=x.u.filter(u=>(ids||[]).includes(u.id));if(!move.length)move=x.u.slice(Math.ceil(x.u.length/2));if(move.length===x.u.length)return false;
+    x.u=x.u.filter(u=>!move.includes(u));const b=newArmy(h,x.a,fb[0].i);b.u=move;return b.id;},
+  merge(h,{ar}){const x=armyOf(h,ar);if(!x)return false;
+    for(const y of armiesAt(x.a).filter(y=>y.h===h&&y!==x)){while(y.u.length&&x.u.length<ARMY_MAX)x.u.push(y.u.shift());if(!y.u.length){delete S.orders[y.id];S.armies=S.armies.filter(z=>z!==y);}}return true;},
+  newArmy(h,{a,bi,Q}){if(S.own[a]!==h||!freeBusho(h).some(o=>o.i===bi))return false;Q=Q||{};
+    const n=TORDER.reduce((s_,t)=>s_+(Q[t]||0),0);const cost=TORDER.reduce((s_,t)=>s_+(Q[t]||0)*unitCost(t),0);if(!n||cost>S.gold[h])return false;
+    const ar=newArmy(h,a,bi);for(const t of TORDER)for(let k=0;k<(Q[t]||0);k++)recruit(h,ar,t);
+    S.log.push({h,y:yearNow(),t:`${A[a].n}で${S.busho[h][bi].n}を大将に新しい軍勢（${n}部隊）をつくる`});return ar.id;},
+  makeArmy(h,{a,bi}){if(!freeBusho(h).some(o=>o.i===bi))return false;return newArmy(h,a,bi).id;},
+  cmd(h,{ar,bi}){const x=armyOf(h,ar);if(!x)return false;x.cmd=bi;x.g=guardMax(x);return true;},
+  policy(h,{id}){if(!policyOk(h,id).ok)return false;applyPolicy(h,id);return true;},
+  joraku(h,{o}){if(!policyOk(h,'joraku').ok||!H[o])return false;applyPolicy(h,'joraku');S.waboNext[o]=h;const ny=YEARS[S.turn+1];
+    news(`将軍の名で、${H[o].n}家に停戦命令が出された`);S.log.push({h,y:yearNow(),t:`上洛し、将軍の名で${hn(o)}に停戦を命じる（${ny||''}年のあいだ攻めてこない）`});return true;},
+  inbox(h,{from,type,yes}){const i=(S.inbox||[]).findIndex(m=>m.from===from&&m.type===type&&(!m.to||m.to===h));if(i<0)return false;const m=S.inbox[i];S.inbox.splice(i,1);
+    if(yes&&m.type==='kashin'){makeVassal(m.from,h);S.log.push({h,y:yearNow(),t:`${hn(m.from)}が軍門に下り、家臣となる`});news(`${hn(m.from)}が${hn(h)}の軍門に下り、家臣となった`);}
+    else if(yes){setRel(h,m.from,m.type);S.log.push({h,y:yearNow(),t:`${hn(m.from)}と${m.type==='domei'?'同盟':'不可侵の約束'}を結ぶ`});}
+    S.letters.push({y:yearNow(),from:m.from,to:h,type:m.type,text:m.t,reply:yes?'受けた':'断った',ok:yes});return true;}
+};
+function doAct(h,k,args){const prev=S._act;S._act=h;try{return ACTS[k](h,args);}finally{if(prev)S._act=prev;else delete S._act;}}
 
 /* ---------- 得点 ---------- */
 function goalDone(h){return H[h].goal.filter(a=>S.own[a]===h).length>=H[h].need;}
 function score(h){const k=kokuOf(h);return Math.round(k+Math.max(0,k-S.start[h])+(goalDone(h)?30:0)+(alive(h)?20:0));}
 const SAVE_KEY='kunitori2.save';
-function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify({S,uid}));}catch(e){}}
+function save(){if(S&&S.mode==='multi')return;try{localStorage.setItem(SAVE_KEY,JSON.stringify({S,uid}));}catch(e){}}
 function load(){try{return JSON.parse(localStorage.getItem(SAVE_KEY));}catch(e){return null;}}

@@ -740,3 +740,18 @@ body{font-family:"BIZ UDPMincho","BIZ UDP明朝 Medium","BIZ UDPGothic",serif;ba
 .mpty .btn{text-align:left;display:flex;flex-direction:column;padding:10px 14px}
 .mpty .btn b{font-size:16px}.mpty .btn small{color:var(--sub)}
 .rpw.in .rpt{color:#f0d68a}
+
+.mpopt{display:flex;align-items:center;gap:6px;font-size:14px}
+.mpopt select{font-size:14px;padding:3px}
+.mpyr{font-size:30px;font-weight:700;font-family:"BIZ UDPMincho",serif;margin-top:4px}
+.mptm{font-size:22px;font-weight:700;color:var(--acc)}
+.mpt{width:100%;border-collapse:collapse;font-size:16px}
+.mpt th,.mpt td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left}
+.mpt th{font-size:13px;color:var(--sub)}
+.mpk{display:inline-flex;width:24px;height:24px;border-radius:50%;align-items:center;justify-content:center;vertical-align:-6px;margin-right:8px}
+.mpk .km{width:16px;height:16px;color:#fff}
+.mpcols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:760px){.mpcols{grid-template-columns:1fr}}
+.mprk{margin:0;padding-left:1.6em;font-size:16px;line-height:2}
+.mpnews{margin:0;padding-left:1.2em;font-size:14px;line-height:1.8}
+#endBtn .ego.wait{filter:saturate(.4) brightness(.85)}

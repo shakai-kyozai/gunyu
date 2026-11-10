@@ -8,8 +8,12 @@ service cloud.firestore {
     function roomExists(code) { return exists(roomPath(code)); }
     function isHost(code) { return signedIn() && roomExists(code) && get(roomPath(code)).data.host == request.auth.uid; }
     function okNick(n) { return n is string && n.size() > 0 && n.size() <= 20; }
+    function ownsHouse(code, h) {
+      return signedIn() && exists(/databases/$(database)/documents/rooms/$(code)/houses/$(h))
+        && get(/databases/$(database)/documents/rooms/$(code)/houses/$(h)).data.uid == request.auth.uid;
+    }
 
-    // 部屋：作った人（先生）だけが書きかえ・削除できる
+    // 部屋：作った人だけが書きかえ・削除できる
     match /rooms/{code} {
       allow read: if signedIn();
       allow create: if signedIn() && code.matches('^[0-9]{6}$')
@@ -18,15 +22,17 @@ service cloud.firestore {
         && request.resource.data.host == request.auth.uid;
       allow delete: if signedIn() && resource.data.host == request.auth.uid;
 
-      // 家の札：同じ家を2人が選ばないようにする
+      // 家の札：同じ家を2人が選ばないようにする。同じニックネームなら入り直せる
       match /houses/{h} {
         allow read: if signedIn();
         allow create: if signedIn() && roomExists(code)
           && request.resource.data.uid == request.auth.uid && okNick(request.resource.data.nick);
+        allow update: if signedIn() && request.resource.data.uid == request.auth.uid
+          && request.resource.data.nick == resource.data.nick;
         allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isHost(code));
       }
 
-      // 参加者：自分の分だけ書ける。先生は外せる
+      // 参加者：自分の分だけ書ける。部屋を作った人は外せる
       match /players/{uid} {
         allow read: if signedIn();
         allow create, update: if signedIn() && request.auth.uid == uid && roomExists(code)
@@ -34,17 +40,34 @@ service cloud.firestore {
         allow delete: if signedIn() && (request.auth.uid == uid || isHost(code));
       }
 
-      // 書状：送った人・受けた人・先生だけが読める。返事は受けた人だけ
+      // ゲームの状態：部屋を作った人の画面だけが書く
+      match /game/{d} {
+        allow read: if signedIn();
+        allow write: if isHost(code);
+      }
+
+      // 命令：その家を動かす人だけが書ける
+      match /ready/{h} {
+        allow read: if isHost(code) || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create, update: if ownsHouse(code, h) && request.resource.data.uid == request.auth.uid;
+        allow delete: if isHost(code) || ownsHouse(code, h);
+      }
+
+      // 書状：送った人・受けた人・部屋を作った人だけが読める
       match /letters/{id} {
         allow read: if signedIn() && (resource.data.from == request.auth.uid
           || resource.data.to == request.auth.uid || isHost(code));
         allow create: if signedIn() && request.resource.data.from == request.auth.uid
-          && request.resource.data.status == 'pending'
+          && request.resource.data.status in ['pending', 'auto']
           && exists(/databases/$(database)/documents/rooms/$(code)/players/$(request.auth.uid));
+        // 受けた人の返事
         allow update: if signedIn() && resource.data.to == request.auth.uid
           && resource.data.status == 'pending'
           && request.resource.data.status in ['ok', 'ng']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'answered']);
+        // 部屋を作った人の画面：コンピューターの家の返事と、結果の反映
+        allow update: if isHost(code)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'answered', 'reply', 'patch', 'applied']);
       }
     }
   }
