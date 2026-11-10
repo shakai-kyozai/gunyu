@@ -148,7 +148,21 @@ function lobbyMap(){const own={};for(const d of HOUSE_DEF)for(const a of d[3])ow
   const labels=HOUSE_DEF.map(d=>{const a=AREAS.find(x=>x.id===d[3][0]);if(!a)return '';
     return `<g class="lml" data-k="${d[0]}" transform="translate(${a.c[0]},${a.c[1]})"><text class="lmn">${esc(d[1].replace(/（.*）/,''))}</text><text class="lmu" y="15"></text></g>`;}).join('');
   return `<svg class="lmap" id="lmap" xmlns="http://www.w3.org/2000/svg">${paths}<g id="lmlab">${labels}</g></svg>`;}
-function lobbyMapDraw(canPick){const sv=q$('#lmap');if(!sv)return;
+// 待合室の地図は、ゲームと同じ地図を使う（はじめの年のようす）。領地をクリックすると、その家を選ぶ
+function lobbyGameMap(canPick){const kS=S;
+  try{if(!S||S.mode!=='preview'){newGame(HOUSE_DEF[0][0]);S.me=null;S.mode='preview';}
+    UI.lobbyPick=a=>{const k=S.own[a];if(!k){toast('ここはどの家の領地でもない（国人衆）',true);return;}if(canPick)pick(k);};
+    UI.mapMode='pow';UI.vb=null;buildMap();UI.vb=UI.full.slice();setVB();drawMap();
+    const bg=q$('#mapbg');if(bg)bg.setAttribute('href',MAP_BG.pol);}
+  catch(e){console.warn(e);}}
+function lobbyNicks(){const sv=q$('#map');if(!sv||!S||S.mode!=='preview')return;let g=sv.querySelector('#lmnick');
+  if(!g){g=document.createElementNS('http://www.w3.org/2000/svg','g');g.id='lmnick';sv.appendChild(g);}
+  const ns='http://www.w3.org/2000/svg';g.innerHTML='';
+  document.querySelectorAll('#gA .area').forEach(p=>{const k=S.own[p.dataset.a];const cl=k&&M.houses[k];p.classList.toggle('lmine',!!cl&&cl.uid===M.uid);p.classList.toggle('ltk',!!cl&&cl.uid!==M.uid);});
+  for(const k in M.houses){const d=HOUSE_DEF.find(x=>x[0]===k);if(!d)continue;const a=AREAS.find(x=>x.id===d[3][0]);if(!a)continue;const cl=M.houses[k];const mine=cl.uid===M.uid;
+    const t=document.createElementNS(ns,'g');t.setAttribute('class','lmtag'+(mine?' mine':''));t.setAttribute('transform',`translate(${a.c[0]},${a.c[1]+30})`);
+    const w=Math.max(60,cl.nick.length*21+30);t.innerHTML=`<rect x="${-w/2}" y="-17" width="${w}" height="34" rx="17"/><text y="8">${esc(cl.nick)}</text>`;g.appendChild(t);}}
+function lobbyMapDraw(canPick){if(q$('#lmwrap .lmw')){lobbyNicks();return;}const sv=q$('#lmap');if(!sv)return;
   if(!sv.getAttribute('viewBox')){try{const bb=sv.getBBox();sv.setAttribute('viewBox',`${bb.x-8} ${bb.y-8} ${bb.width+16} ${bb.height+16}`);}catch(e){}
     sv.querySelectorAll('path.lma.k').forEach(p=>{const k=p.dataset.k;
       p.onmouseenter=()=>sv.querySelectorAll(`path[data-k="${k}"]`).forEach(x=>x.classList.add('hv'));
@@ -167,7 +181,7 @@ function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlay
     ${canPick?`<div class="mpmine" id="mpmine"></div>`:''}
     <h3>${canPick?'動かす家を選ぶ <span class="hint">地図の領地か一覧をクリックして選ぶ。名前が出ている家は、ほかの人が選んでいる。☆はおすすめの家</span>':'家と動かす人'}</h3>
     <div class="mptabs"><button type="button" class="btn small" data-v="map">地図から選ぶ</button><button type="button" class="btn small" data-v="list">一覧から選ぶ</button></div>
-    <div class="lmwrap" id="lmwrap">${lobbyMap()}</div>
+    <div class="lmwrap" id="lmwrap"><div class="mapw lmw"><svg id="map"></svg></div></div>
     <div class="hgrid mphg" id="mpgrid"></div>
     <h3>参加している人 <span id="mpcnt"></span></h3><div class="mplist" id="mplist"></div>
     <p class="hint">だれも選ばなかった家は、コンピューターが動かす。</p>
@@ -186,7 +200,7 @@ function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlay
     const st=q$('#mpstart');if(st)st.disabled=!Object.keys(M.houses).length;};
   const view=v=>{M.lview=v;lsSet('gunyu_lview',v);q$('#lmwrap').style.display=v==='map'?'':'none';q$('#mpgrid').style.display=v==='map'?'none':'';
     document.querySelectorAll('.mptabs .btn').forEach(b=>b.classList.toggle('pri',b.dataset.v===v));};
-  document.querySelectorAll('.mptabs .btn').forEach(b=>b.onclick=()=>view(b.dataset.v));view(lsGet('gunyu_lview')||'map');
+  document.querySelectorAll('.mptabs .btn').forEach(b=>b.onclick=()=>view(b.dataset.v));view(lsGet('gunyu_lview')||'map');lobbyGameMap(canPick);
   sub(C('players'),s=>{M.players={};s.forEach(d=>M.players[d.id]=d.data());draw();});
   sub(C('houses'),s=>{M.houses={};s.forEach(d=>M.houses[d.id]=d.data());draw();});
   if(host){q$('#mpclose').onclick=closeRoom;q$('#mpstart').onclick=startGame;}
@@ -234,7 +248,7 @@ async function startGame(){const ps={};for(const k in M.houses)ps[k]=M.houses[k]
     M.auth=S;M.authUid=uid;}
   finally{S=kS;uid=kU;}
   try{await writeState();await updateDoc(R(),{status:'playing'});}catch(e){toast(errMsg(e),true);q$('#mpstart').disabled=false;return;}
-  stopAll();hostDuties();M.house=Object.keys(M.houses).find(k=>M.houses[k].uid===M.uid)||null;
+  stopAll();hostDuties();M.house=Object.keys(M.houses).find(k=>M.houses[k].uid===M.uid)||null;UI.lobbyPick=null;
   if(M.house)enterGame();else watchScreen();}
 async function hostResume(){
   const d=await getDoc(R('game','state'));if(!d.exists()||d.data().lobby){lobby();return;}
@@ -257,11 +271,13 @@ const BT_WAIT={start:30000,round:20000,end:30000};
 function btSides(ev){const hu=h=>!!(M.auth.players&&M.auth.players[h])&&!M.away.has(h);
   const hsA=ev.A.hs.filter(hu),hsD=ev.D.hs.filter(hu);
   const ch=(sd,hs)=>{const m=(sd.guards||[]).find(g=>g.main);return m&&hs.includes(m.h)?m.h:hs[0]||null;};
-  return {hsA,hsD,chA:ch(ev.A,hsA),chD:ch(ev.D,hsD)};}
+  const watch=[...ev.A.hs.map(h=>[h,'A']),...ev.D.hs.map(h=>[h,'D']),...(ev.def?[[ev.def,'D']]:[])].filter(([h])=>M.auth.players&&M.auth.players[h]);
+  return {hsA,hsD,chA:ch(ev.A,hsA),chD:ch(ev.D,hsD),watch};}
 async function hostEvent(ev){
   if(ev.k==='start'){M.bt=btSides(ev);M.stBattle=`${ev.name}（${[...ev.A.hs,...ev.D.hs].filter(h=>H[h]).map(h=>H[h].n).join('・')}）`;writeStatus();}
   const B=M.bt;if(!B)return undefined;
-  const tg=[...B.hsA.map(h=>[h,'A']),...B.hsD.map(h=>[h,'D'])].filter(([h])=>!M.away.has(h));if(!tg.length)return undefined;
+  const tg=[...B.hsA.map(h=>[h,'A']),...B.hsD.map(h=>[h,'D'])].filter(([h])=>!M.away.has(h));
+  for(const [h,sd] of B.watch)if(!tg.some(t=>t[0]===h))tg.push([h,sd]);if(!tg.length)return undefined;
   const seq=M.bseq=Math.max((M.bseq||0)+1,Date.now());
   let evs=ev;if(ev.k==='end'){const r={...ev.rec};delete r.ev;evs={k:'end',rec:r};}
   await Promise.all(tg.map(([h,side])=>setDoc(R('bt',h),{seq,turn:M.auth.turn,t:Date.now(),s:JSON.stringify({ev:evs,side,chA:B.chA,chD:B.chD})}).catch(e=>console.warn(e))));
@@ -282,7 +298,7 @@ async function resolveTurn(){if(M.resolving||!M.auth||M.auth.ended)return;M.reso
         try{for(const a of JSON.parse(r.acts||'[]'))try{doAct(h,a.k,a.args);}catch(e){console.warn('act',h,a,e);}
           const o=JSON.parse(r.orders||'{}');for(const id in o){const x=S.armies.find(y=>String(y.id)===String(id));if(x&&x.h===h)S.orders[x.id]=o[id];}}
         catch(e){console.warn('ready',h,e);}}
-      S._live=h=>isHu(h)&&!M.away.has(h);});
+      S._live=h=>isHu(h)&&!M.away.has(h);S._watch=hs=>hs.some(h=>h&&isHu(h));});
     const g=withAuth(()=>endTurnG());let input;
     let st=null;
     for(;;){const r=withAuth(()=>g.next(input));input=undefined;
@@ -290,7 +306,7 @@ async function resolveTurn(){if(M.resolving||!M.auth||M.auth.ended)return;M.reso
       if(st){const f={k:'forms',formA:st.formA,formD:st.formD};st=null;try{await hostEvent(f);}catch(e){console.warn(e);}}
       if(r.done)break;if(r.value.k==='start')st=r.value;
       try{input=await hostEvent(r.value);}catch(e){console.warn(e);}}
-    withAuth(()=>{delete S._live;S.resY=yearNow();nextTurn();});M.stBattle='';
+    withAuth(()=>{delete S._live;delete S._watch;S.resY=yearNow();nextTurn();});M.stBattle='';
     await writeState();}
   catch(e){console.error(e);toast('ターンの計算でエラーが起きた：'+errMsg(e),true,8000);}
   M.resolving=false;M.bt=null;if(!M.house)watchScreen();}
@@ -330,7 +346,7 @@ function tickWatch(){const e=q$('#mptm');if(!e||!M.auth)return;const d=M.auth.tu
 /* =========================================================
    遊ぶ人の画面
    ========================================================= */
-function enterGame(){M.inGame=true;
+function enterGame(){M.inGame=true;UI.lobbyPick=null;if(S&&S.mode==='preview')S=null;
   sub(R('bt',M.house),s=>{if(s.exists())onBt(s.data());});
   sub(R('game','state'),s=>{if(s.exists())onState(s.data());});
   sub(R('game','status'),s=>{if(!s.exists())return;M.status=s.data();if(S&&S.mode==='multi'&&q$('#map'))endBtnUI();});

@@ -194,7 +194,7 @@ function* fightG(att,def,area,opt){
   // 陣形（コンピューターの分はここで決める）
   att.form=aiForm(pw(att),pw(def));
   def.form=siege?(def.guards.length?(pw(def)<pw(att)*0.7?'honmaru':(Math.random()<.5?'front':'honmaru')):'honmaru'):aiForm(pw(def),pw(att));
-  const live=!!(att.me||def.me);const events=[];
+  const live=!!(att.me||def.me||(S._watch&&S._watch([...att.hs,...def.hs,opt.owner])));const events=[];
   const side=sd=>({hs:sd.hs,cmd:sd.cmd,guards:sd.guards.map(x=>({name:x.name,n:x.n,max:x.max,main:x.main,h:x.h})),cards:sd.cards.map(c=>({t:c.t,n:c.n,gar:!!c.gar,xp:c.xp||0}))});
   const st={k:'start',name:opt.name,a:area,y:yearNow(),ter:ar.ter,field:!siege,siege,meA:!!att.me,meD:!!def.me,A:side(att),D:side(def),formA:att.form,formD:def.form,mods:mods.slice(),def:opt.owner||null,moA:MO.start,moD:MO.start,sonaeA:att.sonae,sonaeD:def.sonae};
   if(live){const ch=yield st;if(ch){const fa=ch.formA||(ch.form&&att.me?ch.form:null),fd=ch.formD||(ch.form&&!att.me&&def.me?ch.form:null);
@@ -302,7 +302,7 @@ function* resolveTurnG(orders){
   // orders: armyId -> path[]
   const plans={};
   for(const ar of S.armies){ar.startA=ar.a;const p=orders[ar.id];if(!p||!p.length)continue;let c=0,prevA=ar.a;const steps=[];for(const x of p){if(!EDGE[prevA][x])break;c+=EDGE[prevA][x].c;if(c>MP)break;steps.push({a:x,t:c});prevA=x;}plans[ar.id]={steps,i:0,stop:false};}
-  const battles=[];const fought=new Set();S._busy=new Set();
+  const battles=[];const fought=new Set();S._busy=new Set();S._own0={...S.own};
   // 動く前：ZOCの中にいる敵どうしは、にげられずに戦う
   yield* zocEngageG(plans,battles,fought,false);
   for(let t=1;t<=MP;t++){
@@ -325,6 +325,7 @@ function* resolveTurnG(orders){
         const nx=pl.steps[pl.i].a;
         // 和睦命令
         const o=S.own[nx];if(o&&S.wabo[ar.h]===o){pl.stop=true;S.events.push({h:ar.h,t:`停戦命令のため、${hn(o)}の${A[nx].n}へは進めなかった`});break;}
+        if(o&&o!==ar.h&&S._own0&&S._own0[nx]!==o&&!allied(ar.h,o)&&rel(ar.h,o)!=='teki'){bounce(ar,nx,o,plans);break;}
         ar.prev=ar.a;ar.a=nx;pl.i++;arrived.add(nx);
         if(!passable(ar.h,nx)){pl.stop=true;break;}
       }
@@ -333,7 +334,7 @@ function* resolveTurnG(orders){
   }
   // 動いたあと：敵のZOCに入った軍勢は、その敵と戦う
   yield* zocEngageG(plans,battles,fought,true);
-  delete S._busy;
+  delete S._busy;delete S._own0;
   return battles;
 }
 /* ---------- 後詰め：命令を出していない近くの軍勢が、攻められた城を助けに入る ---------- */
@@ -362,7 +363,7 @@ function* battleAtG(a,plans,battles){
     const lead=Object.keys(byH).sort((p,q)=>byH[q]-byH[p])[0];
     const attArm=attArmAll.filter(x=>allied(x.h,lead));
     // 同じ地域に、たがいに敵どうしの軍勢が入ってきたら、まずその軍勢どうしで戦う（野戦）
-    const rivals=attArmAll.filter(x=>hostile(x.h,lead)&&!allied(x.h,lead));
+    const rivals=attArmAll.filter(x=>rel(x.h,lead)==='teki'&&!allied(x.h,lead));
     if(rivals.length){const lb=rivals.sort((p,q)=>totU(q)-totU(p))[0].h;yield* fieldBattleG(attArm,rivals.filter(x=>allied(x.h,lb)),a,plans,battles);continue;}
     if(loop===0&&owner){koz=kozume(a,owner,plans);if(koz.length)defArm.push(...koz);}
     const g=S.gar[a];const gs=sum(g);
@@ -398,9 +399,9 @@ function* battleAtG(a,plans,battles){
       news(`${A[a].n}の城兵は本丸にこもって籠城した（${hn(lead)}が包囲。あと${L}ターンで兵糧が尽きる）`);
       if(isHu(owner)){S.log.push({h:owner,y:yearNow(),t:`${A[a].n}が${hn(lead)}に包囲され、籠城する（あと${L}ターン）`});S.events.push({h:owner,t:`${A[a].n}は籠城している。あと${L}ターンのうちに軍勢を送って包囲をやぶらないと落城する。`});}
       for(const hh of rec.attHs.filter(isHu))S.events.push({h:hh,t:`${A[a].n}の城兵は本丸にこもった。包囲をつづければ、あと${L}ターンで落城する（軍勢を${A[a].n}から動かさないこと）。`});
-      if(SA.me||SD.me)yield {k:'end',rec};
+      if(SA.me||SD.me||(S._watch&&S._watch([...SA.hs,...SD.hs,owner])))yield {k:'end',rec};
       return;}
-    if(SA.me||SD.me)yield {k:'end',rec};
+    if(SA.me||SD.me||(S._watch&&S._watch([...SA.hs,...SD.hs,owner])))yield {k:'end',rec};
     if(r.win==='att'){
       for(const x of defArm)retreat(x,null,plans);
       S.gar[a]=zero();
@@ -443,12 +444,19 @@ function* fieldBattleG(sideA,sideB,a,plans,battles,opt={}){
     const dest=cand.find(ok);
     if(dest)x.a=dest;else if(opt.zoc){}else if(!(S.own[x.a]===x.h)){S.armies=S.armies.filter(y=>y!==x);S.events.push({h:x.h,t:`野戦に敗れ、退く場所がなく、軍勢がちりぢりになった`});}}
   for(const x of win)if(!x.u.length)S.armies=S.armies.filter(y=>y!==x);
-  if(SA.me||SB.me)yield {k:'end',rec};
+  if(SA.me||SB.me||(S._watch&&S._watch([...SA.hs,...SB.hs])))yield {k:'end',rec};
 }
+// 城がすでに落とされていた：あとから着いた軍勢は、戦わずに出発した地域へ引き返す
+function bounce(ar,a,by,plans){const to=ar.startA&&ar.startA!==a&&S.armies.includes(ar)?ar.startA:(ar.prev&&ar.prev!==a?ar.prev:ar.a);
+  ar.a=to;const pl=plans&&plans[ar.id];if(pl)pl.stop=true;
+  if(isHu(ar.h)){S.events.push({h:ar.h,t:`${A[a].n}は、すでに${hn(by)}が攻め落としていた。${cmdOf(ar).n}の軍勢は戦わずに${A[to].n}へ引き返した。`});
+    S.log.push({h:ar.h,y:yearNow(),t:`${A[a].n}はすでに${hn(by)}が攻め落としていたため、${A[to].n}へ引き返す`});}}
 function capture(a,h,arms,plans){
   const from=S.own[a]||null;
   S.own[a]=h;S.gar[a]=zero();
   for(const x of arms){if(plans[x.id])plans[x.id].stop=true;}
+  // 同じ地域にいた、新しい持ち主と敵対していない家の軍勢は引き返す
+  if(plans)for(const x of armiesAt(a))if(x.h!==h&&!allied(x.h,h)&&rel(x.h,h)!=='teki'&&!arms.includes(x))bounce(x,a,h,plans);
   S.changes.push({a,from,to:h});
   // 国の拠点の城を落とすと、同じ国で同じ持ち主の地域もついてくる
   if(isMain(a)){
@@ -726,10 +734,21 @@ function nextTurn(){
   const y=yearNow();
   S.wabo=S.waboNext||{};S.waboNext={};
   if(y===1562&&alive('oda')&&alive('matsudaira')&&!isHu('oda')&&!isHu('matsudaira')){setRel('oda','matsudaira','domei');setRel('imagawa','matsudaira','teki');news('松平家が今川家からはなれ、織田家と同盟を結んだ（清洲同盟）');}
+  if(y===1578)kenshinDies();
   if(y===1582)honnoji();
   aiDiplomacy();aiLetters();
   save();return true;
 }
+// 1578年：上杉謙信が亡くなり、跡継ぎをめぐる争い（御館の乱）で上杉家が弱まる
+function kenshinDies(){const h='uesugi';if(!alive(h)||!S.busho[h])return;const bs=S.busho[h];const i=bs.findIndex(b=>b.n==='上杉謙信'&&!b.dead);if(i<0)return;
+  bs[i].dead=true;if(!bs.some(b=>b.n==='上杉景勝'&&!b.dead))bs.push({n:'上杉景勝',t:72,dead:false});
+  for(const ar of armiesOf(h)){if(ar.cmd===i){const fb=freeBusho(h);ar.cmd=fb.length?fb[0].i:null;ar.g=guardMax(ar);}
+    for(const u of ar.u)u.n=Math.round(u.n*0.7*100)/100;}   // 御館の乱：家中が二つに割れ、兵が減る
+  S.gold[h]=Math.floor(S.gold[h]/2);
+  news('上杉謙信が亡くなった。跡継ぎをめぐって家中が争い（御館の乱）、上杉家の力が弱まった');
+  const nb=bs[lordIdx(h)];
+  if(isHu(h)){S.events.push({h,t:`当主の上杉謙信が病で亡くなった。跡継ぎをめぐる争い（御館の乱）で、兵の3割と金の半分を失った。${nb?nb.n+'が家をつぐ。':''}`});
+    S.log.push({h,y:1578,t:'上杉謙信が亡くなり、御館の乱で家中が争う'});}}
 function honnoji(){
   let top=null,max=-1;for(const h in H){if(!alive(h))continue;const n=kokuOf(h);if(n>max){max=n;top=h;}}
   if(!top)return;const ars=armiesOf(top);if(!ars.length)return;
@@ -835,6 +854,10 @@ const ACTS={
   split(h,{ar,ids}){const x=armyOf(h,ar);const fb=freeBusho(h);if(!x||!fb.length)return false;
     let move=x.u.filter(u=>(ids||[]).includes(u.id));if(!move.length)move=x.u.slice(Math.ceil(x.u.length/2));if(move.length===x.u.length)return false;
     x.u=x.u.filter(u=>!move.includes(u));const b=newArmy(h,x.a,fb[0].i);b.u=move;return b.id;},
+  transfer(h,{from,to,ids}){const x=armyOf(h,from),y=armyOf(h,to);if(!x||!y||x===y||x.a!==y.a||!ids||!ids.length)return false;
+    const mv=x.u.filter(u=>ids.includes(u.id)).slice(0,Math.max(0,ARMY_MAX-y.u.length));if(!mv.length)return false;
+    x.u=x.u.filter(u=>!mv.includes(u));y.u.push(...mv);if(!x.u.length&&x.cmd==null){}
+    if(!x.u.length){delete S.orders[x.id];S.armies=S.armies.filter(z=>z!==x);}return true;},
   merge(h,{ar}){const x=armyOf(h,ar);if(!x)return false;
     for(const y of armiesAt(x.a).filter(y=>y.h===h&&y!==x)){while(y.u.length&&x.u.length<ARMY_MAX)x.u.push(y.u.shift());if(!y.u.length){delete S.orders[y.id];S.armies=S.armies.filter(z=>z!==y);}}return true;},
   newArmy(h,{a,bi,Q}){if(S.own[a]!==h||!freeBusho(h).some(o=>o.i===bi))return false;Q=Q||{};

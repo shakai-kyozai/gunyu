@@ -58,6 +58,8 @@ async function init(){
   const scene=new THREE.Scene();scene.background=new THREE.Color(0x172842);
   const camera=new THREE.PerspectiveCamera(38,1,2,6000);
   const controls=new MapControls(camera,canvas);
+  controls.addEventListener('change',()=>{if(R)R.lastAct=performance.now();});
+  for(const ev of ['pointerdown','pointermove','wheel'])canvas.addEventListener(ev,()=>{if(R)R.lastAct=performance.now();},{passive:true});
   controls.enableDamping=true;controls.dampingFactor=0.12;controls.maxPolarAngle=1.22;controls.minDistance=70;controls.maxDistance=2600;
   controls.zoomSpeed=1.2;controls.screenSpacePanning=false;
   scene.add(new THREE.HemisphereLight(0xffffff,0x40506a,1.6));
@@ -508,6 +510,10 @@ function frame(now){
   if(!running)return;
   if(!R.canvas.isConnected){running=false;return;}
   requestAnimationFrame(frame);
+  // 描く回数をへらして軽くする：さわっている間・動きのあるときは毎回、何もしないときは1秒に12回、上に画面（合戦・結果など）が出ているときは1秒に4回
+  {const act=R.tw||R.anim||now-(R.lastAct||0)<1500;const cov=document.getElementById('dlg');const covered=cov&&cov.classList.contains('on');
+    // ほかのウィンドウを操作しているとき（1台で何人分も開いているときなど）は、1秒に2〜3回だけ描く
+    const unf=!document.hasFocus();const gap=covered?250:act?0:unf?400:80;if(gap&&now-(R.lastDraw||0)<gap)return;R.lastDraw=now;}
   const dt=Math.min(0.05,(now-R.clock)/1000);R.clock=now;
   const cam=R.camera,ctl=R.controls;
   if(R.tw){const t=Math.min(1,(now-R.tw.t0)/R.tw.dur);const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
@@ -597,7 +603,7 @@ const T3D={
     return true;
   },
   unmount(){running=false;if(R){R.canvas.remove();R.labels.remove();R.ro.disconnect();}host=null;},
-  update(){if(!R||!S||!host)return;for(const L of R.alab){const sg=S.siege&&S.siege[L.a.id];const sp=L.d.querySelector('span');if(sp)sp.textContent=sg?`${L.a.n}（籠城 あと${sg.left}）`:L.a.n;L.d.classList.toggle('sg',!!sg);}drawOverlay();buildPieces();buildZoc();buildHouseNames();R.arrowK=null;},
+  update(){if(!R||!S||!host)return;R.lastAct=performance.now();for(const L of R.alab){const sg=S.siege&&S.siege[L.a.id];const sp=L.d.querySelector('span');if(sp)sp.textContent=sg?`${L.a.n}（籠城 あと${sg.left}）`:L.a.n;L.d.classList.toggle('sg',!!sg);}drawOverlay();buildPieces();buildZoc();buildHouseNames();R.arrowK=null;},
   view(target,dist,dur=600){const cam=R.camera,ctl=R.controls;
     // 今の向きを保ったまま、近づく・離れる
     const dir=cam.position.clone().sub(ctl.target);if(dir.length()<1)dir.set(0,0.74,0.67);dir.normalize();

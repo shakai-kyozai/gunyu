@@ -417,9 +417,13 @@ function drawOrders(){
 function locked(){if(S&&S.mode==='multi'&&window.NET&&NET.isReady()){toast('命令を送ったあとは変えられない。「命令をなおす」を押すとなおせる',true,3200);return true;}return false;}
 function act(k,args){if(locked())return false;const r=doAct(S.me,k,args);if(r&&S.mode==='multi'&&window.NET)NET.record(k,args);return r;}
 const myLog=()=>(S.log||[]).filter(l=>!l.h||l.h===S.me);
+// 「とどまる」を選んだ軍勢（このターンだけ覚える）
+function stays(){if(UI.stayT!==S.turn){UI.stayT=S.turn;UI.stay=new Set();}return UI.stay;}
+const unmoved=()=>armiesOf(S.me).filter(x=>!S.orders[x.id]&&!stays().has(x.id));
 const myInbox=()=>(S.inbox||[]).map((m,i)=>({m,i})).filter(o=>!o.m.to||o.m.to===S.me);
 function clickArea(a,h,aid){
   if(UI.justDragged)return;
+  if(UI.lobbyPick){UI.lobbyPick(a);return;}
   if(S.ended||S.dead[S.me])return;
   if(UI.mode==='move'){
     const ar=S.armies.find(x=>x.id===UI.sel);
@@ -435,9 +439,9 @@ function clickArea(a,h,aid){
   refresh();
 }
 function selArmy(id){UI.tab=null;if(UI.sel!==id){UI.cards=new Set();UI.sub=null;}UI.sel=id;UI.mode=null;UI.reach=null;refresh();}
-function togCard(id,ev){ev&&ev.stopPropagation();UI.cards.has(id)?UI.cards.delete(id):UI.cards.add(id);renderPanel();}
+function togCard(id,ev){ev&&ev.stopPropagation();if(DK.justDragged)return;UI.cards.has(id)?UI.cards.delete(id):UI.cards.add(id);renderPanel();renderDock();}
 /* 右クリック：選んでいる自分の軍勢を、その地域へ進ませる（移動・攻める） */
-function rightClickArea(a){
+function rightClickArea(a){if(UI.lobbyPick)return;
   if(UI.justDragged||S.ended||S.dead[S.me])return;
   const ar=S.armies.find(x=>x.id===UI.sel&&x.h===S.me);
   if(!ar){toast('先に自分の軍勢をクリックして選んでから、行き先を右クリックする');return;}
@@ -469,7 +473,7 @@ function warnYes(){const go=UI.warnGo;const h=UI.warnH;if(h&&rel(S.me,h)==='none
 function toast(t,bad,ms){let d=document.getElementById('toast');if(!d){d=document.createElement('div');d.id='toast';document.body.appendChild(d);}
   d.textContent=t;d.className=bad?'bad on':'on';clearTimeout(d._t);d._t=setTimeout(()=>d.className=bad?'bad':'',ms||2200);}
 function startMove(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);UI.mode='move';UI.sub=null;UI.reach=reach(ar);refresh();}
-function stay(){if(locked())return;delete S.orders[UI.sel];UI.sub=null;UI.mode=null;UI.reach=null;refresh();}
+function stay(){if(locked())return;delete S.orders[UI.sel];stays().add(UI.sel);UI.sub=null;UI.mode=null;UI.reach=null;refresh();}
 function doRecruit(t){const ar=S.armies.find(x=>x.id===UI.sel);if(ar)act('recruit',{ar:ar.id,t});refresh();}
 function doDisband(){const ar=S.armies.find(x=>x.id===UI.sel);if(!ar||!UI.cards.size)return;act('disband',{ar:ar.id,ids:[...UI.cards]});UI.cards=new Set();if(!S.armies.includes(ar)){UI.sel=null;delete S.orders[ar.id];}refresh();}
 function splitArmy(){const ar=S.armies.find(x=>x.id===UI.sel);const fb=freeBusho(S.me);if(!fb.length){alertMsg('軍勢を分けるには、軍勢を率いていない武将が必要。');return;}
@@ -505,7 +509,7 @@ function makeArmy(bi){const a=UI.area;const id=act('makeArmy',{a,bi});if(id)UI.s
 function changeCmd(bi){const ar=S.armies.find(x=>x.id===UI.sel);if(ar)act('cmd',{ar:ar.id,bi});refresh();}
 
 /* ---------- 右の欄 ---------- */
-function refresh(){drawMap();renderPanel();renderTicker();modeUI();endBtnUI();if(S&&S.mode==='multi'&&window.NET)NET.save();}
+function refresh(){drawMap();renderPanel();renderTicker();renderDock();modeUI();endBtnUI();if(S&&S.mode==='multi'&&window.NET)NET.save();}
 /* ---------- 1ターンの制限時間 ---------- */
 const TT={end:0,id:0,warned:false};
 const turnSec=()=>S&&S.turnSec!=null?S.turnSec:TURN_SEC;
@@ -523,7 +527,7 @@ function endBtnUI(){
   if(!show){if(b)b.remove();return;}
   if(!b){b=document.createElement('div');b.id='endBtn';}
   if(b.parentNode!==mw)mw.appendChild(b);
-  const mine=armiesOf(S.me);const left=mine.filter(x=>!S.orders[x.id]);
+  const mine=armiesOf(S.me);const left=unmoved();
   const next=left[0];
   b.innerHTML=`<div class="ebox"><div class="ehd"><span class="eyr">${wareki(yearNow())}</span><span class="etn">ターン ${S.turn+1}／${YEARS.length}</span></div>
     <div class="etimer" id="eTimer" style="display:none"><span>のこり</span><b>2:00</b><span class="etb"><i></i></span></div>
@@ -544,7 +548,7 @@ function bushoCard(b,i,h,cur,onclick){return `<div class="ucard bcard ${cur?'sel
 function cmdCards(ar){const cur=cmdOf(ar);return bushoCard(cur,ar.cmd,ar.h,true)+freeBusho(ar.h).map(o=>bushoCard(o.b,o.i,ar.h,false,`changeCmd(${o.i})`)).join('');}
 function unitCard(ar,u){
   const ref=needsRefill(ar)&&u.n<UNIT_MAX-0.05;const sel=UI.cards.has(u.id);
-  return `<div class="ucard ${u.t} ${sel?'sel':''}" onclick="${UI.sub==='org'?`togCard(${u.id},event)`:''}" data-tip="${esc(TYPES[u.t].full+'　'+XPL[xpLv(u.xp)]+'（経験'+Math.round(u.xp)+'）：'+TYPES[u.t].d)}">
+  return `<div class="ucard ${u.t} ${sel?'sel':''}" data-uid="${u.id}" data-ar="${ar.id}" onclick="${UI.sub==='org'?`togCard(${u.id},event)`:''}" data-tip="${esc(TYPES[u.t].full+'　'+XPL[xpLv(u.xp)]+'（経験'+Math.round(u.xp)+'）：'+TYPES[u.t].d)}">
    ${ref?'<span class="cross">✚</span>':''}<div class="upic" style="background-image:url(img/unit/${u.t}.png)"><span class="uk2">${TYPES[u.t].n}</span></div><div class="un">${TYPES[u.t].full.replace(/（.*）/,'')}</div>
    <div class="ubar"><i style="width:${u.n/UNIT_MAX*100}%"></i></div><div class="unum">${fmt(u.n*100)}人</div><div class="ust">${stars(u.xp)}</div></div>`;
 }
@@ -591,8 +595,8 @@ function armyCard(ar,mid){
   const c=cmdOf(ar);const o=S.orders[ar.id];const mine=ar.h===S.me;
   return `<div class="army ${ar.id===UI.sel?'on':''}"><div class="ahead">${genIcon(ar,true)}<div><b>${esc(c.n)}</b>（統率${c.t}）<br><span class="hint">${men(nOf(ar))}・${ar.u.length}部隊${needsRefill(ar)?'　<span class="refl">✚補充中</span>':''}</span>${guardMax(ar)?`<br><span class="hgrd" data-tip="${esc('大将を守る重い甲冑の武者。1人で兵'+GP()+'人分の力がある。全滅すると大将は討ち死にする。毎年そろいなおす')}">旗本 ${Math.round(guardOf(ar)*100)}人${ar.cmd===lordIdx(ar.h)?'（当主の馬廻衆）':''}</span>`:''}</div></div>
    ${mid||''}
-   <div class="sech">部隊<span class="hint">　${UI.sub==='org'?'クリックして選ぶ':'マウスを重ねるとくわしく出る'}</span></div>
-   <div class="ucards">${ar.u.map(u=>unitCard(ar,u)).join('')}</div></div>`;
+   ${document.getElementById('dock')?`<div class="hint dkh">部隊は画面の下に出る。${UI.sub==='org'?'下の部隊カードをクリックして選ぶ。':'部隊カードをつかんで、同じ地域のほかの軍勢のタブへ動かせる。'}</div>`:`<div class="sech">部隊<span class="hint">　${UI.sub==='org'?'クリックして選ぶ':'マウスを重ねるとくわしく出る'}</span></div>
+   <div class="ucards">${ar.u.map(u=>unitCard(ar,u)).join('')}</div>`}</div>`;
 }
 function renderPanel(){
   const me=S.me,h=H[me];
@@ -610,7 +614,8 @@ function renderPanel(){
      ${dipBox(S.own[a])}
     </div>`;
   }
-  const head=`<div class="card"><div class="hh">${faceUrl(me)?`<span class="pface" style="--hc:${h.col}"><img src="${faceUrl(me)}" alt=""><i>${kamonHTML(me)}</i></span>`:`<span class="dot big" style="background:${h.col}">${kamonHTML(me)}</span>`}<div><b>${h.n}家</b>${S.landless&&S.landless[me]?'<span class="hkas land">領地なし（軍勢だけ）</span>':''}${playerOf(me)?`<span class="who hu">${HU_SVG}${esc(playerOf(me))}</span>`:''}${S.lord&&S.lord[me]?`<span class="hkas">${esc(H[S.lord[me]].n)}家の家臣</span>`:Object.keys(S.lord||{}).some(v=>S.lord[v]===me&&alive(v))?`<span class="hkas lord">家臣 ${Object.keys(S.lord).filter(v=>S.lord[v]===me&&alive(v)).length}家</span>`:''}<div class="hint">${wareki(yearNow())}（${yearNow()}年）　ターン${S.turn+1}／${YEARS.length}</div>${(()=>{const L=[];for(const k in (S.wabo||{}))if(S.wabo[k]===me)L.push(`<span class="jrst">停戦命令中：${esc(H[k].n)}家（このターン）</span>`);for(const k in (S.siege||{}))if(S.own[k]===me)L.push(`<span class="jrst sg">籠城中：${esc(A[k].n)}（あと${S.siege[k].left}ターン）</span>`);for(const k in (S.waboNext||{}))if(S.waboNext[k]===me)L.push(`<span class="jrst">停戦命令：${esc(H[k].n)}家（次のターン）</span>`);return L.join('');})()}</div></div>
+  const hcmp=!!(UI.sel&&S.armies.some(x=>x.id===UI.sel&&x.h===me))&&!UI.tab;
+  const head=`<div class="card${hcmp?' hcmp':''}"><div class="hh">${faceUrl(me)?`<span class="pface" style="--hc:${h.col}"><img src="${faceUrl(me)}" alt=""><i>${kamonHTML(me)}</i></span>`:`<span class="dot big" style="background:${h.col}">${kamonHTML(me)}</span>`}<div><b>${h.n}家</b>${S.landless&&S.landless[me]?'<span class="hkas land">領地なし（軍勢だけ）</span>':''}${playerOf(me)?`<span class="who hu">${HU_SVG}${esc(playerOf(me))}</span>`:''}${S.lord&&S.lord[me]?`<span class="hkas">${esc(H[S.lord[me]].n)}家の家臣</span>`:Object.keys(S.lord||{}).some(v=>S.lord[v]===me&&alive(v))?`<span class="hkas lord">家臣 ${Object.keys(S.lord).filter(v=>S.lord[v]===me&&alive(v)).length}家</span>`:''}<div class="hint">${wareki(yearNow())}（${yearNow()}年）　ターン${S.turn+1}／${YEARS.length}</div>${(()=>{const L=[];for(const k in (S.wabo||{}))if(S.wabo[k]===me)L.push(`<span class="jrst">停戦命令中：${esc(H[k].n)}家（このターン）</span>`);for(const k in (S.siege||{}))if(S.own[k]===me)L.push(`<span class="jrst sg">籠城中：${esc(A[k].n)}（あと${S.siege[k].left}ターン）</span>`);for(const k in (S.waboNext||{}))if(S.waboNext[k]===me)L.push(`<span class="jrst">停戦命令：${esc(H[k].n)}家（次のターン）</span>`);return L.join('');})()}</div></div>
    <div class="stat"><span>石高 <b>${kokuOf(me)}</b>万石</span><span>地域 <b>${areasOf(me).length}</b></span><span>金 <b>${S.gold[me]}</b>（収入+${income(me)}・維持-${upkeep(me)}${nenguOut(me)?`・年貢-${nenguOut(me)}`:''}${nenguIn(me)?`・年貢+${nenguIn(me)}`:''}）</span></div>
    <div class="stat"><span>兵 <b class="${tr>cap&&cap?'dn':''}">${(tr*100).toLocaleString()}人</b>${cap?`／上限 ${(cap*100).toLocaleString()}人`:'（領地がないので補充・募兵はできない）'}</span>${tr>cap&&cap?`<span class="dn">上限をこえている：戦いの力 -${Math.round((1-of)*100)}%</span>`:''}</div>
    <div class="goal ${goalN>=h.need?'done':''}">家の目標：${h.gt}<br><span class="hint">（${h.goal.map(x=>A[x].n+(S.own[x]===me?'✓':'')).join('・')} のうち${h.need}つ）</span></div></div>`;
@@ -630,7 +635,7 @@ function renderPanel(){
 const TABS=[['army','軍勢','<svg viewBox="0 0 24 24"><path d="M4 3l9 9-2 2-9-9V3zm16 0v2l-9 9-2-2 9-9h2z" fill="currentColor"/></svg>'],['pol','政策','<svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5zm3 5h8M8 12h8M8 16h5" fill="none" stroke="currentColor" stroke-width="2"/></svg>'],['dip','書状と外交','<svg viewBox="0 0 24 24"><path d="M3 6h18v12H3zm0 0l9 7 9-7" fill="none" stroke="currentColor" stroke-width="2"/></svg>'],['log','記録','<svg viewBox="0 0 24 24"><path d="M6 2h9l4 4v16H6zM9 9h7M9 13h7M9 17h4" fill="none" stroke="currentColor" stroke-width="2"/></svg>']];
 function setTab(t){UI.tab=UI.tab===t?null:t;renderPanel();}
 function topTabsUI(){const bar=$('#topTabs');if(!bar||!S)return;const me=S.me;
-  const badge={army:armiesOf(me).filter(x=>!S.orders[x.id]).length,pol:POLICIES.filter(p=>p.y<=yearNow()&&!S.pol[me][p.id]&&policyOk(me,p.id).ok).length,dip:myInbox().length,log:0};
+  const badge={army:unmoved().length,pol:POLICIES.filter(p=>p.y<=yearNow()&&!S.pol[me][p.id]&&policyOk(me,p.id).ok).length,dip:myInbox().length,log:0};
   bar.innerHTML=TABS.map(([k,n,ic])=>`<button type="button" class="ttab ${UI.tab===k?'on':''}" onclick="setTab('${k}')"><span class="tti">${ic}</span>${n}${badge[k]?`<i class="ttb">${badge[k]}</i>`:''}</button>`).join('')
    +`<span class="tsum"><span class="tsk" title="石高">${TI.rice}<b>${kokuOf(me)}</b>万石</span><span class="tsg" title="金">${TI.koban}<b>${S.gold[me]}</b></span><span class="tsh" title="兵の数">${TI.gar()}<b>${(troopsOf(me)*100).toLocaleString()}</b>人</span></span>`
    +(myInbox().length?`<button type="button" class="tmail" onclick="UI.tab='dip';renderPanel()" title="ほかの家から書状が届いている"><span class="tmi"><svg viewBox="0 0 24 24"><path d="M2 5h20v14H2z" fill="#f6edd2" stroke="#8a5a30" stroke-width="1.2"/><path d="M2 5l10 8 10-8" fill="none" stroke="#8a5a30" stroke-width="1.6"/><circle cx="12" cy="13.5" r="2.6" fill="#a8382a"/></svg><i>${S.inbox.length}</i></span><span>書状が<b>${S.inbox.length}</b>通 届いている</span></button>`:'')
@@ -662,9 +667,56 @@ function dipList(){
    hs.map(h=>`<div class="drow ${nb.has(h)?'nb':''}" onclick="focusOn(areasOf('${h}'),200)"><i style="background:${DIPCOL[rel(S.me,h)]}"></i><span class="dh" style="background:${H[h].col}">${kamonHTML(h)}</span>${playerOf(h)?`<span class="who hu sm">${HU_SVG}${esc(playerOf(h))}</span>`:''}${H[h].n}<span class="hint">${rel(S.me,h)==='kashin'?kashinName(h):relName(rel(S.me,h))==='とくになし'?'中立':relName(rel(S.me,h))}${S.lord&&S.lord[h]&&rel(S.me,h)!=='kashin'?'・'+H[S.lord[h]].n+'家の家臣':''}${nb.has(h)?'・となり':''}・${Math.round(kokuOf(h))}万石</span></div>`).join('');
 }
 function renderTicker(){
-  const rank=Object.keys(H).filter(alive).sort((a,b)=>kokuOf(b)-kokuOf(a)).slice(0,5).map((h,i)=>`${i+1}位 ${H[h].n}（${Math.round(kokuOf(h))}万石）`).join('　');
-  $('#tickrun').innerHTML=`<span>石高：${rank}</span>`+S.news.slice(-12).reverse().map(t=>`<span>${esc(t)}</span>`).join('');
+  const rk=Object.keys(H).filter(alive).sort((a,b)=>kokuOf(b)-kokuOf(a)).slice(0,5);
+  const rank=rk.map((h,i)=>`${i+1}位 ${H[h].n}（${Math.round(kokuOf(h))}万石）`).join('　');
+  const tr=$('#tickrun');if(tr)tr.innerHTML=`<span>石高：${rank}</span>`+S.news.slice(-12).reverse().map(t=>`<span>${esc(t)}</span>`).join('');
+  const j=$('#journal');if(!j)return;
+  j.innerHTML=`<div class="jhd"><b>天下のうわさ</b><span class="hint">${wareki(yearNow())}</span></div>
+    <div class="jrk">${rk.map((h,i)=>`<span class="jr${i}" style="--hc:${H[h].col}"><i>${i+1}</i><span class="jk">${kamonHTML(h)}</span>${esc(H[h].n)}<small>${Math.round(kokuOf(h))}万石</small></span>`).join('')}</div>
+    <ul class="jls">${S.news.slice(-14).reverse().map((t,i)=>`<li class="${i<3?'new':''}">${esc(t)}</li>`).join('')||'<li class="hint">まだうわさはない</li>'}</ul>`;
 }
+/* ---------- 画面の下の軍勢の帯（トータルウォーのような部隊のタブ） ----------
+   タブを選ぶと一段上がり、その下に部隊のカードが出る。部隊のカードは、同じ地域のほかの軍勢のタブへつかんで動かせる */
+const DK={drag:null,justDragged:false};
+function renderDock(){const d=$('#dock');if(!d||!S)return;const me=S.me;
+  if(S.dead[me]){d.innerHTML='<div class="dkempty">あなたの家は滅んだ。</div>';return;}
+  const ars=armiesOf(me).slice().sort((p,q)=>A[p.a].n.localeCompare(A[q.a].n,'ja')||p.id-q.id);
+  const sel=ars.find(x=>x.id===UI.sel)||null;
+  const st=ar=>{const o=S.orders[ar.id];return o?`<span class="dko go">→ ${esc(A[o[o.length-1]].n)}</span>`:stays().has(ar.id)?'<span class="dko st">とどまる</span>':'<span class="dko no">命令なし</span>';};
+  const tab=ar=>`<button type="button" class="dktab ${ar===sel?'on':''} ${sel&&ar!==sel&&ar.a===sel.a?'same':''}" data-ar="${ar.id}" data-a="${ar.a}" style="--hc:${H[ar.h].col}" onclick="dockSel(${ar.id})">
+    ${genIcon(ar)}<span class="dkt"><b>${esc(cmdOf(ar).n)}</b><small>${esc(A[ar.a].n)}・${men(nOf(ar))}・${ar.u.length}部隊${needsRefill(ar)?' <i class="refl">✚</i>':''}</small>${st(ar)}</span></button>`;
+  const split=sel&&freeBusho(me).length&&sel.u.length>1?`<div class="dktab split" data-split="${sel.id}" title="ここへ部隊を動かすと、新しい軍勢に分ける"><b>＋</b><span class="dkt"><b>新しい軍勢へ分ける</b><small>部隊をここへ動かす</small></span></div>`:'';
+  d.innerHTML=`<div class="dktabs">${ars.map(tab).join('')||'<div class="dkempty">軍勢がない。自分の領地をクリックして、新しい軍勢をつくる。</div>'}${split}</div>
+    <div class="dkunits">${sel?`<div class="dkuh">${genIcon(sel,true)}<div><b>${esc(cmdOf(sel).n)}</b>（統率${cmdOf(sel).t}）<br><span class="hint">${men(nOf(sel))}・${sel.u.length}／${ARMY_MAX}部隊${guardMax(sel)?`・旗本${Math.round(guardOf(sel)*100)}人`:''}</span></div></div>
+      <div class="ucards dkcards">${sel.u.map(u=>unitCard(sel,u)).join('')}</div><button type="button" class="dkclose" title="部隊の段をとじる" onclick="UI.sel=null;UI.sub=null;refresh()">▼</button>`:''}</div>`;
+  d.classList.toggle('open',!!sel);
+  d.querySelectorAll('.dkcards .ucard').forEach(el=>el.addEventListener('pointerdown',dockDown));
+  const mw=document.querySelector('.mapw');if(mw)mw.style.setProperty('--dkh',d.offsetHeight+'px');}
+function dockSel(id){const ar=S.armies.find(x=>x.id===id);if(!ar)return;if(DK.justDragged)return;UI.area=ar.a;selArmy(id);if(typeof focusOn==='function')focusOn([ar.a],300);}
+function dockDown(e){if(e.button!==undefined&&e.button!==0)return;const el=e.currentTarget;
+  DK.drag={el,uid:+el.dataset.uid,from:+el.dataset.ar,x:e.clientX,y:e.clientY,on:false,ghost:null};
+  addEventListener('pointermove',dockMove);addEventListener('pointerup',dockUp,{once:true});}
+function dockMove(e){const g=DK.drag;if(!g)return;
+  if(!g.on){if(Math.hypot(e.clientX-g.x,e.clientY-g.y)<7)return;if(locked()){DK.drag=null;removeEventListener('pointermove',dockMove);return;}
+    g.on=true;const from=S.armies.find(x=>x.id===g.from);const n=UI.cards.has(g.uid)&&UI.cards.size>1?UI.cards.size:1;g.n=n;
+    g.ghost=g.el.cloneNode(true);g.ghost.classList.add('dkghost');if(n>1)g.ghost.insertAdjacentHTML('beforeend',`<i class="dkn">${n}</i>`);document.body.appendChild(g.ghost);
+    document.querySelectorAll('.dktab').forEach(t=>{const ok=t.dataset.split?true:(+t.dataset.ar!==g.from&&t.dataset.a===from.a);t.classList.toggle('drop',ok);t.classList.toggle('nodrop',!ok);});tip(null);}
+  g.ghost.style.left=e.clientX+'px';g.ghost.style.top=e.clientY+'px';
+  const t=document.elementFromPoint(e.clientX,e.clientY);const tb=t&&t.closest&&t.closest('.dktab.drop');
+  document.querySelectorAll('.dktab.hov').forEach(x=>x.classList.remove('hov'));if(tb)tb.classList.add('hov');}
+function dockUp(e){removeEventListener('pointermove',dockMove);const g=DK.drag;DK.drag=null;if(!g||!g.on)return;
+  if(g.ghost)g.ghost.remove();DK.justDragged=true;setTimeout(()=>DK.justDragged=false,60);
+  const t=document.elementFromPoint(e.clientX,e.clientY);const tb=t&&t.closest&&t.closest('.dktab.drop');
+  document.querySelectorAll('.dktab').forEach(x=>x.classList.remove('drop','nodrop','hov'));
+  if(!tb){renderDock();return;}
+  const ids=UI.cards.has(g.uid)&&UI.cards.size>1?[...UI.cards]:[g.uid];
+  if(tb.dataset.split){if(!freeBusho(S.me).length){alertMsg('あいている武将がいないので、新しい軍勢をつくれない。');return;}
+    const from=S.armies.find(x=>x.id===g.from);if(from&&ids.length>=from.u.length){toast('すべての部隊は動かせない。少なくとも1部隊は残す',true);return;}
+    const id=act('split',{ar:g.from,ids});if(id){UI.cards=new Set();UI.sel=id;toast('新しい軍勢に分けた');}refresh();return;}
+  const to=+tb.dataset.ar;const y=S.armies.find(x=>x.id===to);
+  if(y&&y.u.length>=ARMY_MAX){toast('その軍勢は12部隊でいっぱい',true);return;}
+  if(act('transfer',{from:g.from,to,ids})){UI.cards=new Set();toast(`${ids.length}部隊を${cmdOf(y).n}の軍勢へ移した`);if(!S.armies.some(x=>x.id===g.from))UI.sel=to;}
+  refresh();}
 function doPolicy(id){
   if(id==='joraku'){jorakuDlg();return;}
   if(!act('policy',{id}))return;refresh();polDlg(id);
@@ -741,7 +793,7 @@ function closeDlg(){const d=$('#dlg');d.classList.remove('on');d.classList.remov
 
 /* ---------- ターンの区切り ---------- */
 function confirmOrders(){
-  const n=armiesOf(S.me).filter(x=>!S.orders[x.id]).length;
+  const n=unmoved().length;
   openDlg(`<h3>命令を確定する</h3><p>${n?`命令を出していない軍勢が${n}つある（その場にとどまる）。`:''}ほかの家の命令と同時に解決される。</p><div class="row"><button class="btn pri" type="button" onclick="closeDlg();${S.mode==='multi'&&window.NET?'NET.ready()':'doResolve()'}">確定する</button><button class="btn" type="button" onclick="closeDlg()">もどる</button></div>`,'',true);
 }
 function battleHTML(b){
@@ -778,11 +830,26 @@ function stepTurn(input){let r;
 }
 function afterResolve(){UI.replay=true;refresh();animateMoves(()=>showResultDlg());}
 const myBattlesOf=list=>(list||[]).filter(b=>b.attHs.includes(S.me)||b.def===S.me||b.defHs.includes(S.me));
+// 全国の順位（石高）：上位3家は大きく、4位から8位は列で。自分の家が圏外なら最後に出す
+function rankHTML(){const hs=Object.keys(H).filter(alive);if(!hs.length)return '';
+  const cur=h=>kokuOf(h);const off=S.mode==='multi'?2:1;const pv=h=>{const a=S.hist[h]||[];return a.length>=off?a[a.length-off]:null;};
+  const order=hs.slice().sort((a,b)=>cur(b)-cur(a));const pOrder=Object.keys(H).filter(h=>(pv(h)||0)>0).sort((a,b)=>pv(b)-pv(a));
+  const mv=h=>{const p=pOrder.indexOf(h),c=order.indexOf(h);if(p<0)return '';const d=p-c;return d>0?`<span class="rkm up">▲${d}</span>`:d<0?`<span class="rkm dn">▼${-d}</span>`:'<span class="rkm st">－</span>';};
+  const dk=h=>{const p=pv(h);if(p==null)return '';const d=Math.round((cur(h)-p)*10)/10;return d?`<small class="${d>0?'up':'dn'}">${d>0?'+':''}${d}</small>`:'';};
+  const face=h=>faceUrl(h)?`<span class="rkf" style="--hc:${H[h].col}"><img src="${faceUrl(h)}" alt=""><i>${kamonHTML(h)}</i></span>`:`<span class="rkf nf" style="--hc:${H[h].col}">${kamonHTML(h)}</span>`;
+  const lord=h=>{const i=lordIdx(h);return i>=0?S.busho[h][i].n:'';};
+  const big=(h,i)=>`<div class="rkb r${i+1} ${h===S.me?'me':''}" style="--hc:${H[h].col}"><div class="rkn">${['一','二','三'][i]}<small>位</small></div>${face(h)}
+    <b>${esc(H[h].n)}家</b><span class="rkl">当主 ${esc(lord(h))}</span>${whoTag(h)}<span class="rkk">${Math.round(cur(h))}<small>万石</small>${dk(h)}</span>${mv(h)}</div>`;
+  const row=(h,i)=>`<div class="rkr ${h===S.me?'me':''}" style="--hc:${H[h].col}"><span class="rkn2">${i+1}</span><span class="rkkm">${kamonHTML(h)}</span><b>${esc(H[h].n)}家</b>${whoTag(h)}<span class="rkk2">${Math.round(cur(h))}万石${dk(h)}</span>${mv(h)}</div>`;
+  const top=order.slice(0,3),rest=order.slice(3,8);const mi=order.indexOf(S.me);
+  return `<div class="rk"><div class="rkt">全国の順位<span class="hint">（石高）</span></div>
+    <div class="rkpod">${[1,0,2].filter(i=>top[i]).map(i=>big(top[i],i)).join('')}</div>
+    <div class="rkrows">${rest.map((h,i)=>row(h,i+3)).join('')}${mi>=8?`<div class="rkgap">…</div>${row(S.me,mi)}`:''}</div></div>`;}
 function showResultDlg(){
   const mine=myBattlesOf(S.lastBattles);
   const ev=(S.events||[]).filter(e=>e.h===S.me).map(e=>`<li>${esc(e.t)}</li>`).join('');
   const ik=(S.ikki||[]).filter(i=>i.h===S.me).map(i=>`<li class="dn">${A[i.a].n}で一揆が起きた</li>`).join('');
-  const ry=S.resY||yearNow();openDlg(`<div class="rsh"><div class="yr sm">${wareki(ry)}</div><div class="rsht">この年の結果<small>西暦${ry}年</small></div></div>${mine.length?mine.map(battleHTML).join(''):'<p>あなたの軍勢は戦わなかった。</p>'}
+  const ry=S.resY||yearNow();openDlg(`<div class="rsh"><div class="yr sm">${wareki(ry)}</div><div class="rsht">この年の結果<small>西暦${ry}年</small></div></div>${rankHTML()}${mine.length?mine.map(battleHTML).join(''):'<p>あなたの軍勢は戦わなかった。</p>'}
    ${ev||ik?`<ul>${ev}${ik}</ul>`:''}
    <p class="hint">全国のうごき：${S.news.slice(-8).map(esc).join('／')}</p>
    <p>収入 +${income(S.me)}　維持費 -${upkeep(S.me)}${nenguOut(S.me)?`　年貢 -${nenguOut(S.me)}`:''}${nenguIn(S.me)?`　年貢 +${nenguIn(S.me)}`:''}　→　金 ${S.gold[S.me]}</p>
@@ -971,7 +1038,10 @@ function pickBg(ev){if(typeof BATTLE_BG!=='object')return null;const k=ev.field?
 if(typeof BATTLE_BG==='object')for(const k in BATTLE_BG)for(const b of BATTLE_BG[k])bgImg(b.src);
 /* 戦場の図：部隊のかたまりと、大将（旗本）。陣形で並び方が変わる。しんがりの吹き出しも出す */
 function bvField(ev,CA,CD,GA,GD,iA,iD){
-  const cv=$('#bvf');const g=cv.getContext('2d');const W=cv.width,Hh=cv.height,cx=W/2;const siege=!ev.field;const xw=W*0.5;   // 城攻め：左半分は城の外、右半分は城の中（曲輪）
+  const cv=$('#bvf');const g=cv.getContext('2d');const W=cv.width,Hh=cv.height,cx=W/2;const siege=!ev.field;
+  // PixiJS の演出の層（読みこめないときは null）
+  const FXL=window.BFX?BFX.attach(cv):null;
+ const xw=W*0.5;   // 城攻め：左半分は城の外、右半分は城の中（曲輪）
   const BGL=pickBg(ev);
   const LY=BGL&&BGL.y?BGL.y:[0.06,0.94];                                       // 野戦で並べる上下の範囲
   const SG=BGL&&BGL.inn?BGL:{front:0.46,inn:[0.53,0.84,0.10,0.90],keep:[0.95,0.5]}; // 城攻めの範囲（絵がないときは手で描く城）
@@ -1082,7 +1152,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
       if(rout&&u.sid===rout){u.alpha=Math.max(0.25,1-k*0.7);}
       if(ret&&u.sid===ret.sid&&!(u.i===ret.idx)){u.alpha=Math.max(0,1-Math.max(0,k-0.5)*2);}}
     // 弓・鉄砲は戦いのあいだずっと撃ちつづける（射撃戦がいちばん多い）。ねらいは敵の弓・鉄砲、大将、敵の前線からランダムに
-    if(cur>=0&&k>0.15&&k<0.97&&!rout){const rate=cur===0?1.2:0.8;
+    let gunN=0;if(cur>=0&&k>0.15&&k<0.97&&!rout){const rate=cur===0?1.2:0.8;
       for(const u of ALL){if(u.role!=='rng'&&!(u.role==='gar'&&u.c.t!=='ashi'))continue;if(u.n<0.5)continue;if(ret&&u.sid===ret.sid)continue;
         if(Math.random()>(u.c.t==='teppo'?0.10:0.18)*rate)continue;
         const foes=ALL.filter(v=>v.sid!==u.sid&&v.n>0.3&&(!ret||v.sid!==ret.sid||v.i===ret.idx));if(!foes.length)continue;
@@ -1091,15 +1161,19 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
         else if(q<0.45)pool=foes.filter(v=>v.role==='cmd');
         else{const dir=u.sid==='A'?1:-1;const front=foes.slice().sort((p_,q_)=>dir*(p_.x-q_.x));pool=front.slice(0,Math.max(1,Math.ceil(front.length/3)));}
         if(!pool||!pool.length)pool=foes;const T=pool[Math.floor(Math.random()*pool.length)];
-        fxs.push({k:u.c.t==='teppo'?'gun':'arrow',x0:u.x,y0:u.y-8,x1:T.x+(Math.random()-.5)*16,y1:T.y+(Math.random()-.5)*12,t:now,d:u.c.t==='teppo'?180:620+Math.random()*120});}}
+        const f={k:u.c.t==='teppo'?'gun':'arrow',x0:u.x,y0:u.y-8,x1:T.x+(Math.random()-.5)*16,y1:T.y+(Math.random()-.5)*12,t:now,d:u.c.t==='teppo'?180:620+Math.random()*120};fxs.push(f);
+        if(FXL&&FXL.ready&&f.k==='gun'){f.px=1;FXL.gun(f.x0,f.y0,f.x1,f.y1);gunN++;}}
+      if(FXL&&gunN>=3)FXL.shake(Math.min(5,1+gunN*0.6));}
     if((cur>=1&&k>0.3&&k<0.95&&!rout)||(ret&&k>0.2&&k<0.95)){const LA=ret?ALL.filter(u=>u.sid!==ret.sid):UA,LD=ret?ALL.filter(u=>u.sid===ret.sid&&u.i===ret.idx):UD;
       for(const u of LA){if(u.n<0.3)continue;let best=null,bd=1e9;for(const v of LD){if(v.n<0.3)continue;const d=Math.hypot(v.x-u.x,v.y-u.y);if(d<bd){bd=d;best=v;}}
-        if(best&&bd<blockW(u.n)/2+blockW(best.n)/2+26&&Math.random()<0.25)fxs.push({k:'spark',x0:(u.x+best.x)/2+(Math.random()-.5)*10,y0:(u.y+best.y)/2+(Math.random()-.5)*14,t:now,d:260});}}
+        if(best&&bd<blockW(u.n)/2+blockW(best.n)/2+26&&Math.random()<0.25){const sx=(u.x+best.x)/2+(Math.random()-.5)*10,sy=(u.y+best.y)/2+(Math.random()-.5)*14;
+          if(FXL&&FXL.ready){if(Math.random()<0.45)FXL.sparks(sx,sy,4);}else fxs.push({k:'spark',x0:sx,y0:sy,t:now,d:260});}}}
     fxs=fxs.filter(f=>now-f.t<f.d+400);
     for(const f of fxs){const q=(now-f.t)/f.d;
+      if(f.k==='arrow'&&q>=1&&!f.ld&&FXL&&FXL.ready){f.ld=1;FXL.dust(f.x1,f.y1);}
       if(f.k==='arrow'&&q<=1){const x=f.x0+(f.x1-f.x0)*q,y=f.y0+(f.y1-f.y0)*q-Math.sin(q*Math.PI)*40;const x2=f.x0+(f.x1-f.x0)*(q-0.05),y2=f.y0+(f.y1-f.y0)*(q-0.05)-Math.sin((q-0.05)*Math.PI)*40;g.strokeStyle='#2a1a0e';g.lineWidth=1.8;g.beginPath();g.moveTo(x2,y2);g.lineTo(x,y);g.stroke();}
       if(f.k==='gun'){if(q<=1){g.strokeStyle='rgba(255,230,150,0.9)';g.lineWidth=1.2;g.beginPath();g.moveTo(f.x0+(f.x1-f.x0)*Math.max(0,q-0.3),f.y0+(f.y1-f.y0)*Math.max(0,q-0.3));g.lineTo(f.x0+(f.x1-f.x0)*q,f.y0+(f.y1-f.y0)*q);g.stroke();}
-        const sq=(now-f.t)/(f.d+400);g.fillStyle=`rgba(240,240,235,${0.6*(1-sq)})`;g.beginPath();g.arc(f.x0+(f.x1>f.x0?14:-14)+sq*8,f.y0-sq*10,5+sq*9,0,Math.PI*2);g.fill();}
+        if(f.px)continue;const sq=(now-f.t)/(f.d+400);g.fillStyle=`rgba(240,240,235,${0.6*(1-sq)})`;g.beginPath();g.arc(f.x0+(f.x1>f.x0?14:-14)+sq*8,f.y0-sq*10,5+sq*9,0,Math.PI*2);g.fill();}
       if(f.k==='spark'&&q<=1){g.strokeStyle=`rgba(255,${200+Math.random()*55|0},80,${1-q})`;g.lineWidth=1.6;for(let a=0;a<5;a++){const an=a*1.26+f.t%3;g.beginPath();g.moveTo(f.x0,f.y0);g.lineTo(f.x0+Math.cos(an)*(4+q*9),f.y0+Math.sin(an)*(4+q*9));g.stroke();}}}
     {const L=ALL.slice().sort((p,q)=>p.y-q.y);for(const u of L)drawU(u);}
     g.font='bold 13px "BIZ UDPGothic",sans-serif';g.textBaseline='top';g.fillStyle='rgba(255,253,246,0.92)';
@@ -1114,7 +1188,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
     phase(ph,fA,tA,fD,tD,gfA,gtA,gfD,gtD,d){setPhase(ph,d);
       UA.forEach(u=>{if(u.role==='cmd'){u.nf=gfA[u.gi];u.nt=gtA[u.gi];}else{u.nf=fA[u.i];u.nt=tA[u.i];}});
       UD.forEach(u=>{if(u.role==='cmd'){u.nf=gfD[u.gi];u.nt=gtD[u.gi];}else{u.nf=fD[u.i];u.nt=tD[u.i];}});},
-    rout(sid,d){rout=sid;t0=performance.now();dur=d;const L=sid==='A'?UA:UD;for(const u of ALL){u.px=u.x;u.py=u.y;u.nf=u.n;u.nt=u.n;}
+    rout(sid,d){rout=sid;t0=performance.now();dur=d;const L=sid==='A'?UA:UD;if(FXL&&FXL.ready){const c=ALL.find(u=>u.sid===sid&&u.role==='cmd');if(c)FXL.blast(c.x,c.y);}for(const u of ALL){u.px=u.x;u.py=u.y;u.nf=u.n;u.nt=u.n;}
       for(const u of L){u.tx=sid==='A'?-40:W+40;u.ty=u.y+(Math.random()-.5)*30;if(u.role!=='cmd')u.nt=u.n*0.85;}
       for(const u of (sid==='A'?UD:UA)){if(u.role==='gar')continue;u.tx=u.x+(sid==='A'?-30:30);u.ty=u.y;}},
     // 退却：しんがりの部隊だけが残り、ほかはマップの外へ。敵はしんがりにせまる
@@ -1125,7 +1199,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
       if(sh&&nTo!=null)sh.nt=nTo;},
     bubble(sid,idx,text,ms){const u=find(sid,idx);if(u)bubbles.push({u,text,t0:performance.now(),ms:Math.max(600,ms)});},
     banner(text,ms){banner={text,t0:performance.now(),ms:Math.max(600,ms)};},
-    stop(){stopped=true;cancelAnimationFrame(raf);}};
+    stop(){stopped=true;cancelAnimationFrame(raf);if(FXL)FXL.destroy();}};
 }
 function goNext(){UI.replay=false;if(S.mode==='multi'&&window.NET){NET.afterResult();return;}if(!nextTurn()){showEnd();return;}UI.area=null;showEvent();}
 /* 和暦（漢数字） */
@@ -1218,10 +1292,10 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
   if($('#cont'))$('#cont').onclick=()=>{S=sv.S;uid=sv.uid;startUI();refresh();startTurnTimer();};
 }
 function startUI(){
-  $('#app').innerHTML=`<div class="topbar" id="topTabs"></div><div class="game"><div class="mapw"><svg id="map"></svg>
+  $('#app').innerHTML=`<div class="topbar" id="topTabs"></div><div class="game dkg"><div class="mapw"><svg id="map"></svg><div id="dock"></div>
    <div class="zm"><button type="button" class="zb" onclick="zoom(0.75)" title="ズームイン">＋</button><button type="button" class="zb" onclick="zoom(1.33)" title="ズームアウト">－</button><button type="button" class="zb t" onclick="fitMap()">全国</button><button type="button" class="zb t" onclick="focusMe()">わが家</button><button type="button" class="zb t v3b" id="b3d" onclick="set3D(!UI.v3)"></button><button type="button" class="zb t" id="bUi" onclick="cycleUi()" title="画面の文字やボタンの大きさ"></button></div>
    <div class="mmode"><button type="button" class="btn small" id="mDip" onclick="setMode('dip')">外交の色</button><button type="button" class="btn small" id="mPow" onclick="setMode('pow')">家ごとの色</button><button type="button" class="btn small" id="mTer" onclick="setMode('ter')">地形</button><span id="dipLeg"></span></div>
-   <div class="legend" onclick="this.classList.toggle('open')"><span class="lgt">凡例を見る ▸</span><span class="lgc">${Object.keys(KIND).map(k=>`<svg class="lgi" viewBox="0 0 512 512"><use href="#ic-${k}"/></svg>${KIND[k].n}`).join(' ')}　<span class="lg2d"><span class="lr main"></span>主な街道 <span class="lr mtn"></span>山道 </span><span class="v3only">街道は地図に描きこみ（軍勢は街道にそって動く） </span><span class="lr sea"></span>海路　右下の数字は部隊の数（1部隊＝最大1000人）　大きな印は国の拠点の城　<span class="zocl"></span>赤い斜線＝敵の軍勢がいる地域（にらみの範囲）：入るとそこで止まり、その敵と戦う<span class="v3only"><br>右クリック：選んだ軍勢をその地域へ進める　立体の地図：ドラッグで動かす・右ドラッグで回す・ホイールで拡大　標高：国土地理院（高さは8倍に強調）</span></span></div></div><div id="panel"></div></div>`;
+   <div class="legend" onclick="this.classList.toggle('open')"><span class="lgt">凡例を見る ▸</span><span class="lgc">${Object.keys(KIND).map(k=>`<svg class="lgi" viewBox="0 0 512 512"><use href="#ic-${k}"/></svg>${KIND[k].n}`).join(' ')}　<span class="lg2d"><span class="lr main"></span>主な街道 <span class="lr mtn"></span>山道 </span><span class="v3only">街道は地図に描きこみ（軍勢は街道にそって動く） </span><span class="lr sea"></span>海路　右下の数字は部隊の数（1部隊＝最大1000人）　大きな印は国の拠点の城　<span class="zocl"></span>赤い斜線＝敵の軍勢がいる地域（にらみの範囲）：入るとそこで止まり、その敵と戦う<span class="v3only"><br>右クリック：選んだ軍勢をその地域へ進める　立体の地図：ドラッグで動かす・右ドラッグで回す・ホイールで拡大　標高：国土地理院（高さは8倍に強調）</span></span></div></div><div id="side"><div id="panel"></div><div id="journal"></div></div></div>`;
   UI.vb=null;applyUi();buildMap();setTimeout(()=>setMode(UI.mapMode),0);UI.vb=UI.full.slice();focusMe();refresh();set3D(UI.v3,true);
 }
 /* ---------- 立体の地図 ---------- */

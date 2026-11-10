@@ -10,7 +10,7 @@
       '<div id="ticker"><span class="lab">天下のうわさ</span><span class="run" id="tickrun"></span></div>'+
       '<div id="app"></div><div id="dlg"><div id="dlgBox"></div></div><div id="tip"></div>');
   }
-  var list=['js/mapdata2.js','js/roadpaths.js','data.js','js/icons.js','js/engine4.js','js/ui5.js'];
+  var list=['js/mapdata2.js','js/roadpaths.js','data.js','js/icons.js','js/fx.js','js/engine4.js','js/ui5.js'];
   function fail(f){document.getElementById('app').innerHTML='<p style="padding:2em;font-size:18px">読みこみに失敗しました（'+f+'）。ページを読みこみ直してください。</p>';}
   function next(i){
     var s=document.createElement('script');
