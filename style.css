@@ -906,3 +906,6 @@ html[data-ui=m] .legend.open .lgt{display:none}
 
 /* 軍勢の帯と終わりのボタンに重ならないよう、ズームのボタンは上に寄せる */
 .mapw .zm{top:58px;transform:none}
+
+#sndBtn{position:fixed;top:7px;right:10px;z-index:120;display:flex;align-items:center;gap:3px;padding:3px 8px;border:1px solid #8a6a2f;border-radius:14px;background:#1a120bcc;color:var(--gold2);font:700 12px "BIZ UDPGothic",sans-serif;cursor:pointer}
+#sndBtn:hover{background:#3a2a17}

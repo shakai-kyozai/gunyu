@@ -698,7 +698,7 @@ function dockDown(e){if(e.button!==undefined&&e.button!==0)return;const el=e.cur
   addEventListener('pointermove',dockMove);addEventListener('pointerup',dockUp,{once:true});}
 function dockMove(e){const g=DK.drag;if(!g)return;
   if(!g.on){if(Math.hypot(e.clientX-g.x,e.clientY-g.y)<7)return;if(locked()){DK.drag=null;removeEventListener('pointermove',dockMove);return;}
-    g.on=true;const from=S.armies.find(x=>x.id===g.from);const n=UI.cards.has(g.uid)&&UI.cards.size>1?UI.cards.size:1;g.n=n;
+    g.on=true;if(typeof SFX!=='undefined')SFX.play('se_card_pick');const from=S.armies.find(x=>x.id===g.from);const n=UI.cards.has(g.uid)&&UI.cards.size>1?UI.cards.size:1;g.n=n;
     g.ghost=g.el.cloneNode(true);g.ghost.classList.add('dkghost');if(n>1)g.ghost.insertAdjacentHTML('beforeend',`<i class="dkn">${n}</i>`);document.body.appendChild(g.ghost);
     document.querySelectorAll('.dktab').forEach(t=>{const ok=t.dataset.split?true:(+t.dataset.ar!==g.from&&t.dataset.a===from.a);t.classList.toggle('drop',ok);t.classList.toggle('nodrop',!ok);});tip(null);}
   g.ghost.style.left=e.clientX+'px';g.ghost.style.top=e.clientY+'px';
@@ -715,7 +715,7 @@ function dockUp(e){removeEventListener('pointermove',dockMove);const g=DK.drag;D
     const id=act('split',{ar:g.from,ids});if(id){UI.cards=new Set();UI.sel=id;toast('新しい軍勢に分けた');}refresh();return;}
   const to=+tb.dataset.ar;const y=S.armies.find(x=>x.id===to);
   if(y&&y.u.length>=ARMY_MAX){toast('その軍勢は12部隊でいっぱい',true);return;}
-  if(act('transfer',{from:g.from,to,ids})){UI.cards=new Set();toast(`${ids.length}部隊を${cmdOf(y).n}の軍勢へ移した`);if(!S.armies.some(x=>x.id===g.from))UI.sel=to;}
+  if(act('transfer',{from:g.from,to,ids})){if(typeof SFX!=='undefined')SFX.play('se_card_drop');UI.cards=new Set();toast(`${ids.length}部隊を${cmdOf(y).n}の軍勢へ移した`);if(!S.armies.some(x=>x.id===g.from))UI.sel=to;}
   refresh();}
 function doPolicy(id){
   if(id==='joraku'){jorakuDlg();return;}
@@ -931,7 +931,7 @@ LB.wait=function(ms){return new Promise(ok=>setTimeout(ok,BV.skip?0:ms/BV.speed)
 LB.log=function(t,cls){const g=$('#bvlog');if(!g)return;const d=document.createElement('div');d.className=cls||'';d.innerHTML=t;g.prepend(d);while(g.children.length>6)g.lastChild.remove();};
 LB.gauge=function(){const {CA,CD,GA,GD}=LB;const fA=LB.tot(CA,GA)/LB.sA,fD=LB.tot(CD,GD)/LB.sD;const v=fA+fD>0?fA/(fA+fD):0.5;const g=$('#bvga');if(!g)return;g.style.width=(v*100).toFixed(1)+'%';$('#bvgm').style.left=(v*100).toFixed(1)+'%';
   $('#bvnA').textContent=Math.round(LB.tot(CA,GA)*100).toLocaleString()+'人';$('#bvnD').textContent=Math.round(LB.tot(CD,GD)*100).toLocaleString()+'人';
-  for(const [G,sid] of [[GA,'A'],[GD,'D']]){const m=G.find(x=>x.main)||G[0];const e=$('#bvgd'+sid);if(e)e.innerHTML=m?(m.cur>0?`旗本 <b>${Math.round(m.cur*100)}</b>人`:'<b class="dn">総大将 討ち死に</b>'):'旗本なし';}};
+  for(const [G,sid] of [[GA,'A'],[GD,'D']]){const m=G.find(x=>x.main)||G[0];if(m&&m.main&&m.cur<=0&&!m._snd&&typeof SFX!=='undefined'){m._snd=1;SFX.play('se_general_killed');}const e=$('#bvgd'+sid);if(e)e.innerHTML=m?(m.cur>0?`旗本 <b>${Math.round(m.cur*100)}</b>人`:'<b class="dn">総大将 討ち死に</b>'):'旗本なし';}};
 LB.draw=function(){const {CA,CD,GA,GD}=LB;
   const dc=(L,sid)=>L.forEach((c,i)=>{const e=$('#bvc'+sid+i);if(!e)return;e.querySelector('.bb i').style.width=Math.max(0,c.cur/Math.max(c.n0,0.01)*100)+'%';e.querySelector('.bm').textContent=Math.round(c.cur*100)+'人';e.classList.toggle('dead',c.cur<0.5);});
   const dg=(L,sid)=>L.forEach((g,i)=>{const e=$('#bvg'+sid+i);if(!e)return;e.querySelector('.bb i').style.width=Math.max(0,g.cur/Math.max(g.n0,0.01)*100)+'%';e.querySelector('.bm').textContent=g.cur>0?Math.round(g.cur*100)+'人':'討ち死に';e.classList.toggle('dead',g.cur<=0);});
@@ -948,6 +948,7 @@ LB.round=async function(ev,cb){if(!LB.alive()){cb&&cb();return;}
   const moA0=LB.moA!=null?LB.moA:LB.ev.moA,moD0=LB.moD!=null?LB.moD:LB.ev.moD;
   const tA=L.nA||fromA,tD=L.nD||fromD,gtA=L.gA||gfA,gtD=L.gD||gfD;
   const dur=3000;LB.F.phase(ph,fromA,tA,fromD,tD,gfA,gtA,gfD,gtD,dur/BV.speed);
+  if(typeof SFX!=='undefined'&&!BV.skip){if(ph===1)SFX.play('se_spear_clash');else if(ph===2)SFX.play('se_cavalry_charge');else if(ph===3)SFX.loop('se_melee_loop');else SFX.stopLoop();}
   const t0=performance.now();
   while(LB.alive()&&!BV.skip){const k=Math.min(1,(performance.now()-t0)/(dur/BV.speed));const e=Math.max(0,(k-0.25)/0.75);
     CA.forEach((c,i)=>c.cur=fromA[i]+(tA[i]-fromA[i])*e);CD.forEach((c,i)=>c.cur=fromD[i]+(tD[i]-fromD[i])*e);GA.forEach((g,i)=>g.cur=gfA[i]+(gtA[i]-gfA[i])*e);GD.forEach((g,i)=>g.cur=gfD[i]+(gtD[i]-gfD[i])*e);
@@ -1152,7 +1153,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
       if(rout&&u.sid===rout){u.alpha=Math.max(0.25,1-k*0.7);}
       if(ret&&u.sid===ret.sid&&!(u.i===ret.idx)){u.alpha=Math.max(0,1-Math.max(0,k-0.5)*2);}}
     // 弓・鉄砲は戦いのあいだずっと撃ちつづける（射撃戦がいちばん多い）。ねらいは敵の弓・鉄砲、大将、敵の前線からランダムに
-    let gunN=0;if(cur>=0&&k>0.15&&k<0.97&&!rout){const rate=cur===0?1.2:0.8;
+    let gunN=0,arN=0;if(cur>=0&&k>0.15&&k<0.97&&!rout){const rate=cur===0?1.2:0.8;
       for(const u of ALL){if(u.role!=='rng'&&!(u.role==='gar'&&u.c.t!=='ashi'))continue;if(u.n<0.5)continue;if(ret&&u.sid===ret.sid)continue;
         if(Math.random()>(u.c.t==='teppo'?0.10:0.18)*rate)continue;
         const foes=ALL.filter(v=>v.sid!==u.sid&&v.n>0.3&&(!ret||v.sid!==ret.sid||v.i===ret.idx));if(!foes.length)continue;
@@ -1162,15 +1163,17 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
         else{const dir=u.sid==='A'?1:-1;const front=foes.slice().sort((p_,q_)=>dir*(p_.x-q_.x));pool=front.slice(0,Math.max(1,Math.ceil(front.length/3)));}
         if(!pool||!pool.length)pool=foes;const T=pool[Math.floor(Math.random()*pool.length)];
         const f={k:u.c.t==='teppo'?'gun':'arrow',x0:u.x,y0:u.y-8,x1:T.x+(Math.random()-.5)*16,y1:T.y+(Math.random()-.5)*12,t:now,d:u.c.t==='teppo'?180:620+Math.random()*120};fxs.push(f);
-        if(FXL&&FXL.ready&&f.k==='gun'){f.px=1;FXL.gun(f.x0,f.y0,f.x1,f.y1);gunN++;}}
-      if(FXL&&gunN>=3)FXL.shake(Math.min(5,1+gunN*0.6));}
+        if(FXL&&FXL.ready&&f.k==='gun'){f.px=1;FXL.gun(f.x0,f.y0,f.x1,f.y1);gunN++;}
+        if(typeof SFX!=='undefined'){if(f.k==='gun')SFX.play('se_teppo_single');else arN++;}}
+      if(FXL&&gunN>=3)FXL.shake(Math.min(5,1+gunN*0.6));
+      if(typeof SFX!=='undefined'){if(gunN>=3)SFX.play('se_teppo_volley');if(arN>=3)SFX.play('se_arrow_volley');}}
     if((cur>=1&&k>0.3&&k<0.95&&!rout)||(ret&&k>0.2&&k<0.95)){const LA=ret?ALL.filter(u=>u.sid!==ret.sid):UA,LD=ret?ALL.filter(u=>u.sid===ret.sid&&u.i===ret.idx):UD;
       for(const u of LA){if(u.n<0.3)continue;let best=null,bd=1e9;for(const v of LD){if(v.n<0.3)continue;const d=Math.hypot(v.x-u.x,v.y-u.y);if(d<bd){bd=d;best=v;}}
         if(best&&bd<blockW(u.n)/2+blockW(best.n)/2+26&&Math.random()<0.25){const sx=(u.x+best.x)/2+(Math.random()-.5)*10,sy=(u.y+best.y)/2+(Math.random()-.5)*14;
           if(FXL&&FXL.ready){if(Math.random()<0.45)FXL.sparks(sx,sy,4);}else fxs.push({k:'spark',x0:sx,y0:sy,t:now,d:260});}}}
     fxs=fxs.filter(f=>now-f.t<f.d+400);
     for(const f of fxs){const q=(now-f.t)/f.d;
-      if(f.k==='arrow'&&q>=1&&!f.ld&&FXL&&FXL.ready){f.ld=1;FXL.dust(f.x1,f.y1);}
+      if(f.k==='arrow'&&q>=1&&!f.ld){f.ld=1;if(FXL&&FXL.ready)FXL.dust(f.x1,f.y1);if(typeof SFX!=='undefined'&&Math.random()<0.5)SFX.play('se_arrow_hit');}
       if(f.k==='arrow'&&q<=1){const x=f.x0+(f.x1-f.x0)*q,y=f.y0+(f.y1-f.y0)*q-Math.sin(q*Math.PI)*40;const x2=f.x0+(f.x1-f.x0)*(q-0.05),y2=f.y0+(f.y1-f.y0)*(q-0.05)-Math.sin((q-0.05)*Math.PI)*40;g.strokeStyle='#2a1a0e';g.lineWidth=1.8;g.beginPath();g.moveTo(x2,y2);g.lineTo(x,y);g.stroke();}
       if(f.k==='gun'){if(q<=1){g.strokeStyle='rgba(255,230,150,0.9)';g.lineWidth=1.2;g.beginPath();g.moveTo(f.x0+(f.x1-f.x0)*Math.max(0,q-0.3),f.y0+(f.y1-f.y0)*Math.max(0,q-0.3));g.lineTo(f.x0+(f.x1-f.x0)*q,f.y0+(f.y1-f.y0)*q);g.stroke();}
         if(f.px)continue;const sq=(now-f.t)/(f.d+400);g.fillStyle=`rgba(240,240,235,${0.6*(1-sq)})`;g.beginPath();g.arc(f.x0+(f.x1>f.x0?14:-14)+sq*8,f.y0-sq*10,5+sq*9,0,Math.PI*2);g.fill();}
@@ -1188,7 +1191,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
     phase(ph,fA,tA,fD,tD,gfA,gtA,gfD,gtD,d){setPhase(ph,d);
       UA.forEach(u=>{if(u.role==='cmd'){u.nf=gfA[u.gi];u.nt=gtA[u.gi];}else{u.nf=fA[u.i];u.nt=tA[u.i];}});
       UD.forEach(u=>{if(u.role==='cmd'){u.nf=gfD[u.gi];u.nt=gtD[u.gi];}else{u.nf=fD[u.i];u.nt=tD[u.i];}});},
-    rout(sid,d){rout=sid;t0=performance.now();dur=d;const L=sid==='A'?UA:UD;if(FXL&&FXL.ready){const c=ALL.find(u=>u.sid===sid&&u.role==='cmd');if(c)FXL.blast(c.x,c.y);}for(const u of ALL){u.px=u.x;u.py=u.y;u.nf=u.n;u.nt=u.n;}
+    rout(sid,d){rout=sid;t0=performance.now();dur=d;if(typeof SFX!=='undefined'){SFX.stopLoop(.5);SFX.play('se_rout');}const L=sid==='A'?UA:UD;if(FXL&&FXL.ready){const c=ALL.find(u=>u.sid===sid&&u.role==='cmd');if(c)FXL.blast(c.x,c.y);}for(const u of ALL){u.px=u.x;u.py=u.y;u.nf=u.n;u.nt=u.n;}
       for(const u of L){u.tx=sid==='A'?-40:W+40;u.ty=u.y+(Math.random()-.5)*30;if(u.role!=='cmd')u.nt=u.n*0.85;}
       for(const u of (sid==='A'?UD:UA)){if(u.role==='gar')continue;u.tx=u.x+(sid==='A'?-30:30);u.ty=u.y;}},
     // 退却：しんがりの部隊だけが残り、ほかはマップの外へ。敵はしんがりにせまる

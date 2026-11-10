@@ -412,7 +412,7 @@ function applyPatch(p){let o;try{o=JSON.parse(p);}catch(e){return;}if(!M.base||o
   Object.assign(M.base,{rel:o.rel,gold:o.gold,lord:o.lord,req:o.req});rebuild();if(q$('#map'))refresh();}
 function saveLocal(){ssSet('gunyu_acts',JSON.stringify({code:M.code,turn:M.turn,acts:M.acts,orders:S&&S.orders||{},ready:M.ready}));}
 function record(k,args){M.acts.push({k,args:clone(args)});saveLocal();}
-async function ready(auto){if(M.ready||!S||S.ended||S.dead[S.me])return;M.ready=true;stopTurnTimer();
+async function ready(auto){if(M.ready||!S||S.ended||S.dead[S.me])return;if(typeof SFX!=='undefined')SFX.play('se_turn_end');M.ready=true;stopTurnTimer();
   const orders={};for(const id in S.orders){const x=S.armies.find(y=>String(y.id)===String(id));if(x&&x.h===S.me)orders[id]=S.orders[id];}
   try{await setDoc(R('ready',S.me),{uid:M.uid,turn:M.turn,acts:JSON.stringify(M.acts),orders:JSON.stringify(orders),at:serverTimestamp()});
     saveLocal();toast(auto?'時間切れ。ここまでの命令を送った':'命令を送った。ほかの家がそろうと、ターンが進む');}
@@ -427,7 +427,7 @@ function leftSec(){return M.dur?Math.max(3,M.dur-(Date.now()-M.t0)/1000):0;}
 function afterResult(){UI.replay=false;UI.area=null;if(S.ended){showEnd();return;}showEvent();}
 
 /* ---------- 書状 ---------- */
-async function letter(to,type,target,text){
+async function letter(to,type,target,text){if(typeof SFX!=='undefined')SFX.play('se_letter_send');
   const tn=(LETTER_TYPES.find(x=>x.id===type)||{}).n||type;
   try{if(isHu(to)){const why=humanLetterWhy(S.me,to,type);if(why){alertMsg(`${hname(to)}へは送れない：${why}`);return;}
       const toUid=M.houses[to]&&M.houses[to].uid;if(!toUid){alertMsg(`${hname(to)}を動かす人が見つからない。`);return;}
@@ -437,7 +437,7 @@ async function letter(to,type,target,text){
     else{await addDoc(C('letters'),{from:M.uid,to:M.room.host,fromH:S.me,toH:to,fromNick:S.players[S.me]||M.nick,toNick:'',type,target:target||null,text:text||null,ai:true,status:'pending',turn:M.turn,created:serverTimestamp()});
       toast(`${hname(to)}へ書状を送った。返事を待っている…`,false,3000);}}
   catch(e){toast(errMsg(e),true);}}
-function incoming(id,L){const tn=(LETTER_TYPES.find(x=>x.id===L.type)||{}).n||L.type;const tg=L.target&&A[L.target]?`（${A[L.target].n}）`:'';
+function incoming(id,L){if(typeof SFX!=='undefined')SFX.play('se_letter_arrive');const tn=(LETTER_TYPES.find(x=>x.id===L.type)||{}).n||L.type;const tg=L.target&&A[L.target]?`（${A[L.target].n}）`:'';
   const det=(LETTER_TYPES.find(x=>x.id===L.type)||{}).d||'';
   openDlg(`<div class="rpw in"><div class="rpt">${esc(hname(L.fromH))}から書状が届いた<span class="who hu lg">${HU_SVG}${esc(L.fromNick)}</span></div>
     <div class="rpm"><span class="rpf" style="--hc:${H[L.fromH]?H[L.fromH].col:'#888'}">${face(L.fromH)}<i>${kamonHTML(L.fromH)}</i></span>
