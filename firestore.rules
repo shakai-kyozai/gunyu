@@ -36,7 +36,8 @@ service cloud.firestore {
       match /players/{uid} {
         allow read: if signedIn();
         allow create, update: if signedIn() && request.auth.uid == uid && roomExists(code)
-          && okNick(request.resource.data.nick) && request.resource.data.house is string;
+          && okNick(request.resource.data.nick)
+          && (request.resource.data.house == null || request.resource.data.house is string);
         allow delete: if signedIn() && (request.auth.uid == uid || isHost(code));
       }
 

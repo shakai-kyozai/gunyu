@@ -755,3 +755,15 @@ body{font-family:"BIZ UDPMincho","BIZ UDP明朝 Medium","BIZ UDPGothic",serif;ba
 .mprk{margin:0;padding-left:1.6em;font-size:16px;line-height:2}
 .mpnews{margin:0;padding-left:1.2em;font-size:14px;line-height:1.8}
 #endBtn .ego.wait{filter:saturate(.4) brightness(.85)}
+
+.mphg{max-height:none;overflow:visible;grid-template-columns:repeat(auto-fill,minmax(124px,1fr))}
+.mpht{padding-bottom:9px}
+.mpht .who{margin:3px 0 0}
+.mpht.tk{opacity:.55;cursor:not-allowed;background:#00000030}
+.mpht.tk:hover{border-color:#6b5430;background:#00000030}
+.mpht:disabled{cursor:default;opacity:1}.mpht.tk:disabled{opacity:.6}
+.mpprev{font-size:11px;color:#f0d68a;border:1px dashed #c9a24a88;border-radius:8px;padding:0 6px;margin-top:2px}
+.mpwait.need{border-left-color:#e2b45a;font-weight:700}
+.mpsv{border-top:1px dashed var(--line);padding-top:6px;display:flex;flex-direction:column;gap:3px}
+.mpsv input[type=file]{font-size:12px;max-width:190px}
+.mpmine .mpp{max-width:520px}

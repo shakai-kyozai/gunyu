@@ -621,7 +621,7 @@ function renderPanel(){
      ${POLICIES.some(p=>p.y>yearNow())?`<div class="hint" style="margin-top:6px">これから使えるようになる政策：${POLICIES.filter(p=>p.y>yearNow()).map(p=>`${p.n}（${p.y}年〜）`).join('・')}</div>`:''}</div>`,
    dip:()=>`<div class="card"><h3>書状と外交</h3>${myInbox().map(({m,i})=>`<div class="inbox">${esc(m.t)}<div class="row"><button class="btn small" type="button" onclick="answerInbox(${i},true)">受ける</button><button class="btn small" type="button" onclick="answerInbox(${i},false)">断る</button></div></div>`).join('')}
      <button class="btn pri wide" type="button" onclick="letterDlg()">書状を書く</button><div class="dipl" style="margin-top:8px">${dipList()}</div></div>`,
-   log:()=>`<div class="card"><h3>この家の記録</h3><div class="logs" style="max-height:none">${myLog().slice().reverse().map(l=>`<div>${l.y}年　${esc(l.t)}</div>`).join('')||'<span class="hint">まだない</span>'}</div></div>`};
+   log:()=>`${S.mode==='multi'&&window.NET&&NET.isHost()?`<div class="card"><h3>ゲームの保存（部屋を作った人）</h3><p class="hint">ターンが進むたびに、この端末に自動で保存される。授業で終わらなかったときは、次の時間に新しい部屋を作るときに「続きから」を選ぶ。</p><div class="row"><button class="btn" type="button" onclick="NET.download()">ファイルにも書き出す</button></div></div>`:''}<div class="card"><h3>この家の記録</h3><div class="logs" style="max-height:none">${myLog().slice().reverse().map(l=>`<div>${l.y}年　${esc(l.t)}</div>`).join('')||'<span class="hint">まだない</span>'}</div></div>`};
   const body=S.dead[me]?'<div class="card warn">あなたの家は滅んだ。</div>':(UI.tab&&tabs[UI.tab]?tabs[UI.tab]():(sel||'<div class="card hint">地図の地域をクリックすると、その地域の軍勢や城のようすが出る。自分の軍勢をクリックして命令を出す。上の「軍勢・政策・書状と外交・記録」を押すと、ここにそのメニューが出る。</div>'));
   $('#panel').innerHTML=head+body;
   topTabsUI();
