@@ -24,7 +24,7 @@ const M={uid:null,code:null,role:null,nick:'',house:null,room:null,players:{},ho
   // 遊ぶ人
   inGame:false,base:null,baseUid:1,turn:-1,acts:[],ready:false,t0:0,dur:0,pseq:0,status:null,
   // 親の画面
-  auth:null,authUid:1,rd:{},resolving:false,timer:0,doing:new Set(),stWrite:0};
+  auth:null,authUid:1,rd:{},btr:{},away:new Set(),bt:null,bseq:0,stBattle:'',btq:[],btBusy:false,btLast:0,liveSeen:new Set(),resolving:false,timer:0,doing:new Set(),stWrite:0};
 const q$=s=>document.querySelector(s);
 const hname=k=>H[k]?H[k].n+'家':k;
 const face=k=>FACE[k]?`<img src="img/face/${k}.jpg" alt="">`:`<b>${esc(H[k]?H[k].k||'':'')}</b>`;
@@ -141,6 +141,23 @@ function houseTile(k,canPick){const d=HOUSE_DEF.find(x=>x[0]===k);const hm=A[d[3
   return `<button type="button" class="hgc mpht ${mine?'on':''} ${cl&&!mine?'tk':''}" data-k="${k}" style="--hc:${H[k].col}" ${canPick?'':'disabled'}>${f}<span class="hgk">${kamonHTML(k)}</span>
     <b>${d[4]?'<i class="hgs">☆</i>':''}${esc(d[1])}家</b><small>${esc(hm.n)}（${esc(hm.pv)}）</small>
     ${cl?`<span class="who hu">${HU_SVG}${esc(cl.nick)}</span>`:prev?`<span class="mpprev">前回：${esc(prev)}</span>`:''}</button>`;}
+// 待合室の地図：はじめの領地を家の色でぬる。家の領地をクリックすると、その家を選ぶ
+function lobbyMap(){const own={};for(const d of HOUSE_DEF)for(const a of d[3])own[a]=d[0];
+  const nm=k=>{const d=HOUSE_DEF.find(x=>x[0]===k);return d?d[1]+'家':'';};
+  const paths=AREAS.map(a=>`<path class="lma${own[a.id]?' k':''}" d="${a.d}" data-k="${own[a.id]||''}"><title>${esc(own[a.id]?nm(own[a.id])+'（'+a.n+'）':a.n)}</title></path>`).join('');
+  const labels=HOUSE_DEF.map(d=>{const a=AREAS.find(x=>x.id===d[3][0]);if(!a)return '';
+    return `<g class="lml" data-k="${d[0]}" transform="translate(${a.c[0]},${a.c[1]})"><text class="lmn">${esc(d[1].replace(/（.*）/,''))}</text><text class="lmu" y="15"></text></g>`;}).join('');
+  return `<svg class="lmap" id="lmap" xmlns="http://www.w3.org/2000/svg">${paths}<g id="lmlab">${labels}</g></svg>`;}
+function lobbyMapDraw(canPick){const sv=q$('#lmap');if(!sv)return;
+  if(!sv.getAttribute('viewBox')){try{const bb=sv.getBBox();sv.setAttribute('viewBox',`${bb.x-8} ${bb.y-8} ${bb.width+16} ${bb.height+16}`);}catch(e){}
+    sv.querySelectorAll('path.lma.k').forEach(p=>{const k=p.dataset.k;
+      p.onmouseenter=()=>sv.querySelectorAll(`path[data-k="${k}"]`).forEach(x=>x.classList.add('hv'));
+      p.onmouseleave=()=>sv.querySelectorAll('path.hv').forEach(x=>x.classList.remove('hv'));
+      if(canPick)p.onclick=()=>pick(k);});}
+  sv.querySelectorAll('path.lma.k').forEach(p=>{const k=p.dataset.k;const cl=M.houses[k];const mine=cl&&cl.uid===M.uid;
+    p.style.fill=H[k].col;p.classList.toggle('mine',!!mine);p.classList.toggle('tk',!!cl&&!mine);});
+  sv.querySelectorAll('.lml').forEach(g=>{const k=g.dataset.k;const cl=M.houses[k];const u=g.querySelector('.lmu');u.textContent=cl?cl.nick:'';
+    g.classList.toggle('on',!!cl);g.classList.toggle('mine',!!cl&&cl.uid===M.uid);});}
 function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlays;const rs=M.room.resume;
   q$('#app').innerHTML=`<div class="mpscr">
     <div class="mphead"><div><div class="mpl">部屋番号</div><div class="mpcode">${fmtCode(M.code)}</div>
@@ -148,7 +165,9 @@ function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlay
       <div class="mpst" id="mpst">つながっている</div></div>
     ${rs?`<p class="mpwait">前回の続き（${rs.y}年・ターン${rs.turn+1}）から始める。前回と同じ家を選ぶ（「前回：」の名前が目じるし）。だれも選ばなかった家は、コンピューターが動かす。</p>`:''}
     ${canPick?`<div class="mpmine" id="mpmine"></div>`:''}
-    <h3>${canPick?'動かす家を選ぶ <span class="hint">クリックで選ぶ。名前が出ている家は、ほかの人が選んでいる。☆はおすすめの家</span>':'家と動かす人'}</h3>
+    <h3>${canPick?'動かす家を選ぶ <span class="hint">地図の領地か一覧をクリックして選ぶ。名前が出ている家は、ほかの人が選んでいる。☆はおすすめの家</span>':'家と動かす人'}</h3>
+    <div class="mptabs"><button type="button" class="btn small" data-v="map">地図から選ぶ</button><button type="button" class="btn small" data-v="list">一覧から選ぶ</button></div>
+    <div class="lmwrap" id="lmwrap">${lobbyMap()}</div>
     <div class="hgrid mphg" id="mpgrid"></div>
     <h3>参加している人 <span id="mpcnt"></span></h3><div class="mplist" id="mplist"></div>
     <p class="hint">だれも選ばなかった家は、コンピューターが動かす。</p>
@@ -156,7 +175,7 @@ function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlay
   const draw=()=>{if(!q$('#mpgrid'))return;
     if(!host&&!M.players[M.uid]){stopAll();alertMsg('部屋から外された。');setTimeout(()=>location.reload(),2500);return;}
     const mineH=Object.keys(M.houses).find(k=>M.houses[k].uid===M.uid)||null;M.house=mineH;
-    q$('#mpgrid').innerHTML=HOUSE_DEF.map(d=>houseTile(d[0],canPick)).join('');
+    q$('#mpgrid').innerHTML=HOUSE_DEF.map(d=>houseTile(d[0],canPick)).join('');lobbyMapDraw(canPick);
     if(canPick)document.querySelectorAll('.mpht').forEach(b=>b.onclick=()=>pick(b.dataset.k));
     const me=q$('#mpmine');if(me)me.innerHTML=mineH?`<div class="mpp" style="--hc:${H[mineH].col}"><span class="mpf">${face(mineH)}<i>${kamonHTML(mineH)}</i></span><div class="mpn"><span class="hint">あなたが動かす家</span><b>${esc(hname(mineH))}</b><span class="who hu">${HU_SVG}${esc(M.nick)}</span></div><span class="hint">ほかの家をクリックすると変えられる</span></div>`
       :`<p class="mpwait need">下の一覧から、動かす家をクリックして選ぶ。</p>`;
@@ -165,6 +184,9 @@ function lobby(){const host=M.role==='host';const canPick=!host||M.room.hostPlay
       return p.house?pcard(p,btn):`<div class="mpp"><span class="mpf"></span><div class="mpn"><b class="hint">家を選んでいる…</b><span class="who hu">${HU_SVG}${esc(p.nick)}</span></div>${btn}</div>`;}).join(''):'<p class="hint">まだだれも参加していない</p>';
     document.querySelectorAll('[data-kick]').forEach(b=>b.onclick=()=>kick(b.dataset.kick));
     const st=q$('#mpstart');if(st)st.disabled=!Object.keys(M.houses).length;};
+  const view=v=>{M.lview=v;lsSet('gunyu_lview',v);q$('#lmwrap').style.display=v==='map'?'':'none';q$('#mpgrid').style.display=v==='map'?'none':'';
+    document.querySelectorAll('.mptabs .btn').forEach(b=>b.classList.toggle('pri',b.dataset.v===v));};
+  document.querySelectorAll('.mptabs .btn').forEach(b=>b.onclick=()=>view(b.dataset.v));view(lsGet('gunyu_lview')||'map');
   sub(C('players'),s=>{M.players={};s.forEach(d=>M.players[d.id]=d.data());draw();});
   sub(C('houses'),s=>{M.houses={};s.forEach(d=>M.houses[d.id]=d.data());draw();});
   if(host){q$('#mpclose').onclick=closeRoom;q$('#mpstart').onclick=startGame;}
@@ -198,7 +220,7 @@ async function writeState(){const a=M.auth;M.t0=Date.now();
   autoSave();M.rd={};await writeStatus(true);}
 async function writeStatus(force){const now=Date.now();if(!force&&now-M.stWrite<1500){clearTimeout(M._stT);M._stT=setTimeout(()=>writeStatus(true),1600);return;}
   M.stWrite=now;const turn=M.auth.turn;const ready=Object.keys(M.rd).filter(h=>M.rd[h].turn===turn);
-  try{await setDoc(R('game','status'),{turn,ready,tot:liveHumans().length});}catch(e){console.warn(e);}}
+  try{await setDoc(R('game','status'),{turn,ready,tot:liveHumans().length,resolving:!!M.resolving,battle:M.stBattle||''});}catch(e){console.warn(e);}}
 async function startGame(){const ps={};for(const k in M.houses)ps[k]=M.houses[k].nick;
   if(!Object.keys(ps).length)return;
   const no=activePlayers().filter(u=>!M.players[u].house).map(u=>M.players[u].nick);
@@ -224,21 +246,54 @@ function hostDuties(){
   sub(C('ready'),s=>{s.forEach(d=>M.rd[d.id]=d.data());writeStatus();checkAll();if(M.role==='host'&&!M.house)watchScreen();});
   sub(C('letters'),s=>s.docChanges().forEach(c=>{if(c.type!=='removed')hostLetter(c.doc.id,c.doc.data());}));
   sub(C('houses'),s=>{M.houses={};s.forEach(d=>M.houses[d.id]=d.data());});
-  M.timer=setInterval(()=>{const a=M.auth;if(!a||a.ended||M.resolving)return;
-    if(a.turnSec&&Date.now()>M.t0+a.turnSec*1000+8000)resolveTurn();
-    if(!M.house)tickWatch();},1000);}
+  sub(C('btr'),s=>s.forEach(d=>M.btr[d.id]=d.data()));
+  M.timer=setInterval(()=>{const a=M.auth;if(!M.house)tickWatch();if(!a||a.ended||M.resolving)return;
+    if(a.turnSec&&Date.now()>M.t0+a.turnSec*1000+8000)resolveTurn();},1000);}
 function checkAll(){const a=M.auth;if(!a||a.ended||M.resolving)return;const hs=liveHumans();
   if(hs.length&&hs.every(h=>M.rd[h]&&M.rd[h].turn===a.turn))resolveTurn();}
-async function resolveTurn(){if(M.resolving||!M.auth||M.auth.ended)return;M.resolving=true;
+/* ---------- 合戦をその場で：陣形・しんがり・城の守り方を、かかわる家の人が選ぶ ----------
+   親は合戦の場面ごとに bt/{家} に書き、かかわる人の返事（btr/{家}）を待つ。時間内に返事がない人は、そのターンのあいだコンピューターにまかせる */
+const BT_WAIT={start:30000,round:20000,end:30000};
+function btSides(ev){const hu=h=>!!(M.auth.players&&M.auth.players[h])&&!M.away.has(h);
+  const hsA=ev.A.hs.filter(hu),hsD=ev.D.hs.filter(hu);
+  const ch=(sd,hs)=>{const m=(sd.guards||[]).find(g=>g.main);return m&&hs.includes(m.h)?m.h:hs[0]||null;};
+  return {hsA,hsD,chA:ch(ev.A,hsA),chD:ch(ev.D,hsD)};}
+async function hostEvent(ev){
+  if(ev.k==='start'){M.bt=btSides(ev);M.stBattle=`${ev.name}（${[...ev.A.hs,...ev.D.hs].filter(h=>H[h]).map(h=>H[h].n).join('・')}）`;writeStatus();}
+  const B=M.bt;if(!B)return undefined;
+  const tg=[...B.hsA.map(h=>[h,'A']),...B.hsD.map(h=>[h,'D'])].filter(([h])=>!M.away.has(h));if(!tg.length)return undefined;
+  const seq=M.bseq=Math.max((M.bseq||0)+1,Date.now());
+  let evs=ev;if(ev.k==='end'){const r={...ev.rec};delete r.ev;evs={k:'end',rec:r};}
+  await Promise.all(tg.map(([h,side])=>setDoc(R('bt',h),{seq,turn:M.auth.turn,t:Date.now(),s:JSON.stringify({ev:evs,side,chA:B.chA,chD:B.chD})}).catch(e=>console.warn(e))));
+  const who=ev.k==='retreat'||ev.k==='forms'?[]:[B.chA,B.chD].filter(h=>h&&!M.away.has(h));
+  if(!who.length)return undefined;
+  const got=await waitBtr(who,seq,BT_WAIT[ev.k]||20000);
+  for(const h of who)if(!got[h])M.away.add(h);   // 返事がない人は、このターンのあいだコンピューターにまかせる
+  if(ev.k==='start')return {formA:got[B.chA]&&got[B.chA].form,formD:got[B.chD]&&got[B.chD].form};
+  if(ev.k==='round')return {retreatA:!!(got[B.chA]&&got[B.chA].retreat),retreatD:!!(got[B.chD]&&got[B.chD].retreat)};
+  return undefined;}
+function waitBtr(who,seq,ms){return new Promise(ok=>{const t0=Date.now();
+  const chk=()=>{const got={};for(const h of who){const r=M.btr[h];if(r&&r.seq===seq)got[h]=r;}
+    if(who.every(h=>got[h])||Date.now()-t0>ms){clearInterval(iv);ok(got);}};
+  const iv=setInterval(chk,250);chk();});}
+async function resolveTurn(){if(M.resolving||!M.auth||M.auth.ended)return;M.resolving=true;M.away=new Set();M.bt=null;M.stBattle='';writeStatus(true);
   try{withAuth(()=>{
       for(const h of humans().slice().sort()){const r=M.rd[h];if(!r||r.turn!==S.turn||!alive(h))continue;
         try{for(const a of JSON.parse(r.acts||'[]'))try{doAct(h,a.k,a.args);}catch(e){console.warn('act',h,a,e);}
           const o=JSON.parse(r.orders||'{}');for(const id in o){const x=S.armies.find(y=>String(y.id)===String(id));if(x&&x.h===h)S.orders[x.id]=o[id];}}
         catch(e){console.warn('ready',h,e);}}
-      drive(endTurnG());S.resY=yearNow();nextTurn();});
+      S._live=h=>isHu(h)&&!M.away.has(h);});
+    const g=withAuth(()=>endTurnG());let input;
+    let st=null;
+    for(;;){const r=withAuth(()=>g.next(input));input=undefined;
+      // 陣形が決まった（人の家の選んだ陣形と、コンピューターの陣形）ことを知らせる
+      if(st){const f={k:'forms',formA:st.formA,formD:st.formD};st=null;try{await hostEvent(f);}catch(e){console.warn(e);}}
+      if(r.done)break;if(r.value.k==='start')st=r.value;
+      try{input=await hostEvent(r.value);}catch(e){console.warn(e);}}
+    withAuth(()=>{delete S._live;S.resY=yearNow();nextTurn();});M.stBattle='';
     await writeState();}
   catch(e){console.error(e);toast('ターンの計算でエラーが起きた：'+errMsg(e),true,8000);}
-  M.resolving=false;if(!M.house)watchScreen();}
+  M.resolving=false;M.bt=null;if(!M.house)watchScreen();}
 // 書状：コンピューターの家あては返事を書く。人どうしは、返事が決まったら結果を反映する
 function patchOf(){return JSON.stringify({seq:Date.now(),rel:S.rel,gold:S.gold,lord:S.lord,req:S.req});}
 async function hostLetter(id,L){if(L.applied||M.doing.has(id)||!M.auth)return;
@@ -268,7 +323,7 @@ function watchScreen(){const a=M.auth;if(!a)return;const hs=Object.keys(a.player
   const tr=q$('#tickrun');if(tr)tr.innerHTML=`<span>石高：${v.rank.slice(0,5).map((r,i)=>`${i+1}位 ${esc(H[r.h].n)}（${r.k}万石）`).join('　')}</span>`+v.news.map(t=>`<span>${esc(t)}</span>`).join('');
   q$('#mpclose').onclick=closeRoom;q$('#mpsave').onclick=download;const nb=q$('#mpnow');if(nb)nb.onclick=()=>{if(confirm('命令を送っていない家は、その場にとどまる。進めますか？'))resolveTurn();};
   tickWatch();}
-function tickWatch(){const e=q$('#mptm');if(!e||!M.auth)return;const d=M.auth.turnSec;if(M.resolving){e.textContent='ターンを計算している…';return;}
+function tickWatch(){const e=q$('#mptm');if(!e||!M.auth)return;const d=M.auth.turnSec;if(M.resolving){e.textContent=M.stBattle?`合戦が行われている：${M.stBattle}`:'ターンを計算している…';return;}
   if(!d){e.textContent='時間の制限なし（全員がそろうと進む）';return;}const left=Math.max(0,Math.round(d-(Date.now()-M.t0)/1000));
   e.textContent=`のこり ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;}
 
@@ -276,6 +331,7 @@ function tickWatch(){const e=q$('#mptm');if(!e||!M.auth)return;const d=M.auth.tu
    遊ぶ人の画面
    ========================================================= */
 function enterGame(){M.inGame=true;
+  sub(R('bt',M.house),s=>{if(s.exists())onBt(s.data());});
   sub(R('game','state'),s=>{if(s.exists())onState(s.data());});
   sub(R('game','status'),s=>{if(!s.exists())return;M.status=s.data();if(S&&S.mode==='multi'&&q$('#map'))endBtnUI();});
   sub(C('houses'),s=>{M.houses={};s.forEach(d=>M.houses[d.id]=d.data());});
@@ -298,7 +354,7 @@ function enterGame(){M.inGame=true;
 function onState(d){
   const o=JSON.parse(d.s);const first=!S||S.mode!=='multi'||!q$('#map');const newTurn=d.turn!==M.turn||d.ended&&!(S&&S.ended);
   M.base=o.S;M.baseUid=o.uid;M.t0=d.t0;M.dur=d.dur;M.pseq=Math.max(M.pseq,d.t0);
-  if(newTurn){M.turn=d.turn;M.acts=[];M.ready=false;M.status=null;
+  if(newTurn){M.btq=[];M.btRun=(M.btRun||0)+1;M.btBusy=false;M.turn=d.turn;M.acts=[];M.ready=false;M.status=null;
     // 同じターンの途中で読みこみ直したときは、操作をもどす
     const sv=ssGet('gunyu_acts');if(sv){try{const v=JSON.parse(sv);if(v.code===M.code&&v.turn===d.turn){M.acts=v.acts||[];M.saveOrders=v.orders||{};M.ready=!!v.ready;}}catch(e){}}}
   rebuild(newTurn?(M.saveOrders||{}):null);M.saveOrders=null;
@@ -307,7 +363,30 @@ function onState(d){
   stopTurnTimer();closeDlg();
   UI.sel=null;UI.mode=null;UI.reach=null;UI.replay=true;refresh();
   animateMoves(()=>playMine(myBattlesOf(S.lastBattles),()=>{if(S.ended)showEnd();else showResultDlg();}));}
-function playMine(list,done){let i=0;const next=()=>{const b=list[i++];if(!b){done();return;}playBattle(b,next);};next();}
+const btKey=b=>[b.name,b.a,(b.attHs||[]).join(',')].join('|');
+function onBt(d){if(!d||d.seq<=M.btLast||d.turn!==M.turn||Date.now()-d.t>90000)return;M.btLast=d.seq;
+  let o;try{o=JSON.parse(d.s);}catch(e){return;}M.btq.push({seq:d.seq,...o});pumpBt();}
+async function pumpBt(){if(M.btBusy)return;M.btBusy=true;const run=M.btRun=(M.btRun||0)+1;
+  while(M.btq.length&&run===M.btRun){const x=M.btq.shift();try{await showBt(x);}catch(e){console.warn(e);}}
+  if(run===M.btRun)M.btBusy=false;}
+function btReply(seq,data){setDoc(R('btr',M.house),{uid:M.uid,seq,...data,at:serverTimestamp()}).catch(e=>console.warn(e));}
+function showBt(x){return new Promise(done=>{const ev=x.ev;
+  if(ev.k==='start'){stopTurnTimer();ev.meA=x.side==='A'&&x.chA===S.me;ev.meD=x.side==='D'&&x.chD===S.me;const choose=ev.meA||ev.meD;
+    // 人が選ぶ側の陣形は、決まるまで出さない
+    if(x.chA)ev.formA=null;if(x.chD)ev.formD=null;
+    LB.open(ev,false,ch=>{if(choose)btReply(x.seq,{form:ch&&ch.form||null});done();});
+    if(choose){const c=q$('#bvch');if(c&&c.style.display!=='none')c.insertAdjacentHTML('beforeend','<div class="hint bvchh">30秒のうちに選ぶ。選ばないと、自動で決まる。</div>');}
+    else{const pn=q$('#bvpn');if(pn)pn.textContent='同じ側の家が陣形を選んでいる…';}}
+  else if(ev.k==='round'){if(!LB.alive()){done();return;}LB.round(ev,c=>{if(LB.myS)btReply(x.seq,{retreat:!!(c&&c.retreat)});done();});}
+  else if(ev.k==='retreat'){if(!LB.alive()){done();return;}LB.retreat(ev,()=>done());}
+  else if(ev.k==='forms'){if(LB.alive()){const c=q$('#bvch');if(c)c.style.display='none';LB.ev.formA=ev.formA;LB.ev.formD=ev.formD;
+      const a=q$('#bvfmA'),d=q$('#bvfmD');if(a)a.textContent='陣形：'+LB.fm('A',ev.formA);if(d)d.textContent='陣形：'+LB.fm('D',ev.formD);
+      if(LB.F&&LB.F.setForms)LB.F.setForms(ev.formA,ev.formD);
+      LB.log(`<b>陣形が決まった：${esc(LB.iA.name)}は${LB.fm('A',ev.formA)}、${esc(LB.iD.name)}は${LB.fm('D',ev.formD)}。</b>`,'ph');}
+    done();}
+  else if(ev.k==='end'){M.liveSeen.add(btKey(ev.rec));if(!LB.alive()){btReply(x.seq,{ack:1});done();return;}LB.end(ev.rec,()=>{btReply(x.seq,{ack:1});done();});}
+  else done();});}
+function playMine(list,done){list=list.filter(b=>!M.liveSeen.has(btKey(b)));M.liveSeen=new Set();let i=0;const next=()=>{const b=list[i++];if(!b){done();return;}playBattle(b,next);};next();}
 // 親の状態＋自分の操作のやりなおし ＝ 自分の画面
 function rebuild(orders){const keep=orders||(S&&S.mode==='multi'?S.orders:{})||{};
   S=clone(M.base);uid=M.baseUid;S.me=M.house;
@@ -327,7 +406,7 @@ async function unready(){if(!M.ready)return;
   try{await setDoc(R('ready',S.me),{uid:M.uid,turn:-1,acts:'[]',orders:'{}',at:serverTimestamp()});M.ready=false;saveLocal();startTurnTimer();toast('命令をなおせる。なおしたら、もう一度「次のターンへ」を押す');}
   catch(e){toast(errMsg(e),true);}
   refresh();}
-function waitTxt(){const st=M.status;if(!st||st.turn!==M.turn)return '';return `（${st.ready.length}／${st.tot}）`;}
+function waitTxt(){const st=M.status;if(!st||st.turn!==M.turn)return '';if(st.resolving)return st.battle?`。合戦が行われている：${st.battle}`:'。ターンを計算している…';return `（${st.ready.length}／${st.tot}）`;}
 function leftSec(){return M.dur?Math.max(3,M.dur-(Date.now()-M.t0)/1000):0;}
 function afterResult(){UI.replay=false;UI.area=null;if(S.ended){showEnd();return;}showEvent();}
 

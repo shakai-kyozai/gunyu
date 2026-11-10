@@ -197,7 +197,8 @@ function* fightG(att,def,area,opt){
   const live=!!(att.me||def.me);const events=[];
   const side=sd=>({hs:sd.hs,cmd:sd.cmd,guards:sd.guards.map(x=>({name:x.name,n:x.n,max:x.max,main:x.main,h:x.h})),cards:sd.cards.map(c=>({t:c.t,n:c.n,gar:!!c.gar,xp:c.xp||0}))});
   const st={k:'start',name:opt.name,a:area,y:yearNow(),ter:ar.ter,field:!siege,siege,meA:!!att.me,meD:!!def.me,A:side(att),D:side(def),formA:att.form,formD:def.form,mods:mods.slice(),def:opt.owner||null,moA:MO.start,moD:MO.start,sonaeA:att.sonae,sonaeD:def.sonae};
-  if(live){const ch=yield st;if(ch&&ch.form){if(att.me)att.form=ch.form;if(def.me&&(siege?SIEGE_CMD[ch.form]:FORMS[ch.form]))def.form=ch.form;}}
+  if(live){const ch=yield st;if(ch){const fa=ch.formA||(ch.form&&att.me?ch.form:null),fd=ch.formD||(ch.form&&!att.me&&def.me?ch.form:null);
+    if(fa&&att.me&&FORMS[fa])att.form=fa;if(fd&&def.me&&(siege?SIEGE_CMD[fd]:FORMS[fd]))def.form=fd;}}
   const fA=FORMS[att.form],fD=siege?SIEGE_CMD[def.form]:FORMS[def.form];
   let moA=MO.start,moD=MO.start+(siege&&def.form==='front'?MO.front:0);
   st.formA=att.form;st.formD=def.form;st.moA=moA;st.moD=moD;st.sonaeA=att.sonae;st.sonaeD=def.sonae;events.push(st);
@@ -262,7 +263,7 @@ function* fightG(att,def,area,opt){
     if(!ended&&(moA<=MO.rout||moD<=MO.rout)){rout='morale';ended=moA<=MO.rout&&moD<=MO.rout?(moA>moD?'att':'def'):moA<=MO.rout?'def':'att';L.moraleRout=ended==='att'?'D':'A';}
     const routed=frA<0.35||frD<0.35;
     let ret=null;
-    if(live){const c=yield {k:'round',log:L,frA,frD,last:!!(ended||routed||ri===MAXR-1)};if(c&&c.retreat&&!ended&&!routed&&ri<MAXR-1)ret=att.me?'att':'def';}
+    if(live){const c=yield {k:'round',log:L,frA,frD,last:!!(ended||routed||ri===MAXR-1)};if(c&&!ended&&!routed&&ri<MAXR-1){if(c.retreatA&&att.me)ret='att';else if(c.retreatD&&def.me)ret='def';else if(c.retreat)ret=att.me?'att':'def';}}
     if(!ret&&!ended&&!routed&&ri>=1&&ri<MAXR-1){for(const k of ['att','def']){const sd=k==='att'?att:def;if(sd.me)continue;const my=k==='att'?frA:frD,en=k==='att'?frD:frA;const mo=k==='att'?moA:moD;if((my<0.5&&en>0.7||mo<35)&&Math.random()<0.5){ret=k;break;}}}
     if(ret){// しんがり：いちばん経験のある部隊が残って敵を食い止める。そのあいだにほかの部隊は退く
       const sd=ret==='att'?att:def,en=ret==='att'?def:att;

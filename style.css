@@ -783,3 +783,18 @@ body{font-family:"BIZ UDPMincho","BIZ UDP明朝 Medium","BIZ UDPGothic",serif;ba
   .bvrs{font-size:16px;padding:0 6px}
   .bvrn{flex-direction:column;align-items:center;gap:4px}
 }
+
+/* 待合室の地図 */
+.mptabs{display:flex;gap:8px;margin:4px 0 10px}
+.lmwrap{background:#14232c;border:1px solid var(--line);border-radius:10px;padding:6px}
+.lmap{display:block;width:100%;height:auto;max-height:74vh}
+.lma{fill:#5a4a38;fill-opacity:.45;stroke:#1a120b;stroke-width:.7}
+.lma.k{fill-opacity:.8;cursor:pointer;transition:fill-opacity .15s}
+.lma.k.hv{fill-opacity:1;stroke:#fff3d6;stroke-width:1.4}
+.lma.k.tk{fill-opacity:.5;stroke:#000;stroke-width:1.1}
+.lma.k.mine{fill-opacity:1;stroke:#f0d68a;stroke-width:2}
+.lml{pointer-events:none}
+.lmn,.lmu{text-anchor:middle;font-family:"BIZ UDPGothic",sans-serif;paint-order:stroke;stroke:#000;stroke-linejoin:round}
+.lmn{font-size:13px;font-weight:700;fill:#fff;stroke-width:3px}
+.lmu{font-size:12.5px;font-weight:700;fill:#f0d68a;stroke-width:3px}
+.lml.mine .lmn{fill:#f0d68a}

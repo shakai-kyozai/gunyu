@@ -54,6 +54,16 @@ service cloud.firestore {
         allow delete: if isHost(code) || ownsHouse(code, h);
       }
 
+      // 合戦（その場で陣形などを選ぶ）：部屋を作った人の画面が、かかわる家に場面を送り、その家の人が返事をする
+      match /bt/{h} {
+        allow read: if isHost(code) || ownsHouse(code, h);
+        allow write: if isHost(code);
+      }
+      match /btr/{h} {
+        allow read: if isHost(code) || ownsHouse(code, h);
+        allow create, update: if ownsHouse(code, h) && request.resource.data.uid == request.auth.uid;
+      }
+
       // 書状：送った人・受けた人・部屋を作った人だけが読める
       match /letters/{id} {
         allow read: if signedIn() && (resource.data.from == request.auth.uid

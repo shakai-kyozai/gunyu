@@ -839,8 +839,9 @@ LB.open=function(ev,auto,cb){
   {const blue='linear-gradient(#5a8be8,#2c5aa0)',red='linear-gradient(#e26b5f,#a8322a)';$('#bvga').style.background=meA?blue:meD?red:iA.col;$('.bvg').style.background=meD?blue:meA?red:iD.col;}
   LB.F=bvField(ev,CA,CD,GA,GD,iA,iD);LB.F.start();
   LB.gauge();
-  const reveal=()=>{LB.moA=ev.moA;LB.moD=ev.moD;LB.mo('A',ev.moA);LB.mo('D',ev.moD);$('#bvfmA').textContent='陣形：'+fm('A',ev.formA);$('#bvfmD').textContent='陣形：'+fm('D',ev.formD);LB.F.setForms(ev.formA,ev.formD);
+  const reveal=()=>{LB.moA=ev.moA;LB.moD=ev.moD;LB.mo('A',ev.moA);LB.mo('D',ev.moD);$('#bvfmA').textContent='陣形：'+fm('A',ev.formA);$('#bvfmD').textContent='陣形：'+fm('D',ev.formD);if(ev.formA&&ev.formD)LB.F.setForms(ev.formA,ev.formD);
     const mm=[];const fa=FORMS[ev.formA],fd=ev.siege?SIEGE_CMD[ev.formD]:FORMS[ev.formD];
+    if(!fa||!fd){LB.log('<b>両軍が陣形を選んでいる…</b>','ph');return;}
     mm.push(`${esc(iA.name)}：${fa?fa.n:''}`,`${esc(iD.name)}：${fd?fd.n:''}`);
     if(!ev.siege){if(fa&&fa.beats===ev.formD)mm.push(`${fa.n}は${fd.n}に強い`);if(fd&&fd.beats===ev.formA)mm.push(`${fd.n}は${fa.n}に強い`);}
     $('#bvmods').insertAdjacentHTML('beforeend',mm.map(m=>`<span class="bvmod fm">${m}</span>`).join(''));
