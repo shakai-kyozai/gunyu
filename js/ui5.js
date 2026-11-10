@@ -956,10 +956,10 @@ LB.end=async function(b,cb){
   const fw=document.querySelector('.bvfw');if(fw){fw.appendChild(box);box.querySelector('.bvrb').onclick=fin;box.querySelector('.bvrb').focus();fw.scrollIntoView({block:'center',behavior:'smooth'});}
 };
 /* 部隊の絵（斜め上から見た右向きのドット絵。守る側は左右を反転して使う） */
-const USPR={};function uSpr(k){if(!USPR[k]){const im=new Image();im.src=`img/unit2/${k}.png`;USPR[k]=im;}const im=USPR[k];return im.complete&&im.naturalWidth?im:null;}
+const USPR={};function uSpr(k){if(!USPR[k]){const im=new Image();im.crossOrigin='anonymous';im.src=`img/unit2/${k}.png`;USPR[k]=im;}const im=USPR[k];return im.complete&&im.naturalWidth?im:null;}
 ['ashi','kiba','yumi','teppo','hata'].forEach(uSpr);
 // 戦場の背景：地形（平地・山地）と城攻めで分け、場所ごとに決まった1枚をえらぶ
-const BGIMG={};function bgImg(src){if(!BGIMG[src]){const im=new Image();im.src=src;BGIMG[src]=im;}return BGIMG[src];}
+const BGIMG={};function bgImg(src){if(!BGIMG[src]){const im=new Image();im.crossOrigin='anonymous';im.src=src;BGIMG[src]=im;}return BGIMG[src];}
 function pickBg(ev){if(typeof BATTLE_BG!=='object')return null;const k=ev.field?(ev.ter==='山'?'mountain':'plain'):'siege';const L=BATTLE_BG[k];if(!L||!L.length)return null;
   let h=0;for(const ch of String(ev.a))h=(h*31+ch.charCodeAt(0))%9973;return L[h%L.length];}
 if(typeof BATTLE_BG==='object')for(const k in BATTLE_BG)for(const b of BATTLE_BG[k])bgImg(b.src);
@@ -988,7 +988,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
   if(BGL){const im=bgImg(BGL.src);const put=()=>{const x=bg.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(im,0,0,W,Hh);x.fillStyle='rgba(0,0,0,0.08)';x.fillRect(0,0,W,Hh);};
     if(im.complete&&im.naturalWidth)put();else im.addEventListener('load',put,{once:true});}
   const role=c=>c.gar?'gar':c.t==='kiba'?'cav':(c.t==='yumi'||c.t==='teppo')?'rng':'inf';
-  const faces={};const faceImg=gd=>{const u=faceUrl(gd.h,gd.name);if(!u)return null;if(!faces[u]){const im=new Image();im.src=u;faces[u]=im;}return faces[u];};
+  const faces={};const faceImg=gd=>{const u=faceUrl(gd.h,gd.name);if(!u)return null;if(!faces[u]){const im=new Image();im.crossOrigin='anonymous';im.src=u;faces[u]=im;}return faces[u];};
   const mk=(C,G,sid,info)=>{const L=C.map((c,i)=>({c,i,sid,role:role(c),col:info.col,x:0,y:0,px:0,py:0,tx:0,ty:0,n:c.cur,nf:c.cur,nt:c.cur,alpha:1,hit:0}));
     const by={};for(const u of L)(by[u.role]=by[u.role]||[]).push(u);
     const col=(list,yc,sp)=>{const per=7;list.forEach((u,k)=>{const c=Math.floor(k/per),rr=k%per,n=Math.min(per,list.length-c*per);u.row=rr-(n-1)/2;u.colk=c;u.yy=yc+u.row*sp;});};

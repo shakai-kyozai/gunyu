@@ -46,7 +46,7 @@ function hFlat(x,y,h){if(!R.flat||h<=0.05)return h;const L=R.flat.grid[Math.floo
   for(const f of L){const d=Math.hypot(x-f.x,y-f.y);if(d>=f.r1)continue;let w=d<=f.r0?1:1-(d-f.r0)/(f.r1-f.r0);w=w*w*(3-2*w);h=h+(f.h-h)*w;}
   return h;}
 const hGame=(x,y)=>hFlat(x,y,hRaw(x,y));
-const loadImg=src=>new Promise((ok,ng)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ng;i.src=src;});
+const loadImg=src=>new Promise((ok,ng)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>ok(i);i.onerror=ng;i.src=src;});
 
 /* ---------- 準備 ---------- */
 async function init(){
