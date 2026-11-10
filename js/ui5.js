@@ -1205,11 +1205,10 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
   const getNick=()=>{const v=(nk.value||'').trim();if(!v){nk.classList.add('need');nk.focus();toast('ニックネームを入れてください',true);return null;}try{localStorage.setItem('gunyu_nick',v);}catch(e){}return v;};
   nk.oninput=()=>nk.classList.remove('need');
   $('#go').onclick=()=>{const n=getNick();if(!n)return;newGame(selH);S.mode='solo';S.players={[selH]:n};startUI();showEvent();};
-  $('#goMulti').onclick=()=>{const n=getNick();if(!n)return;
-    openDlg(`<h3>みんなで遊ぶ</h3><p>クラスのみんなが、それぞれ1つの家を動かして同時に遊ぶ形である。先生が「部屋」を作り、みんなは部屋番号を入れて参加する。</p>
-      <label>部屋番号 <input type="text" id="room" maxlength="8" placeholder="先生から聞いた番号" disabled></label>
-      <p class="hint">みんなで遊ぶ形は、いま準備中である（先生用の画面とあわせて作る）。いまは「一人で遊ぶ」で遊べる。</p>
-      <div class="row"><button class="btn pri" type="button" onclick="closeDlg()">もどる</button></div>`,'',true);};
+  $('#goMulti').onclick=async()=>{const n=getNick();if(!n)return;const g=$('#goMulti');g.disabled=true;
+    try{if(!window.NET)await import(new URL('js/mp.js',document.baseURI).href);NET.open(n,selH);}
+    catch(e){console.warn(e);alertMsg('通信の準備ができなかった。ネットワークを確かめて、ページを読みこみ直してください。');}
+    g.disabled=false;};
   if($('#cont'))$('#cont').onclick=()=>{S=sv.S;uid=sv.uid;startUI();refresh();startTurnTimer();};
 }
 function startUI(){

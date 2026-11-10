@@ -287,3 +287,17 @@ const VIEW3D={roadsInMap:true,h:'img/height16.png',tex:'img/terrain3d.jpg',texHi
     yama:{src:['img/p_yamajiro2.txt','img/p_yamajiro3.txt'],fp:11,vary:{yaw:Math.PI,size:0.15,height:0.25,tint:0.07,green:true,bright:0.1}},minato:{src:'img/p_minato.txt',fp:9.5,vary:{yaw:0.6,size:0.1,height:0.05}},gin:{src:'img/p_gin.txt',fp:8.5,vary:{yaw:1.2,size:0.12,height:0.15}},
     tera:{src:'img/p_tera.txt',fp:9.5,vary:{yaw:0.5,size:0.1,height:0.08}},kyoto:{src:'img/p_kyoto.txt',fp:17},sakai:{src:'img/p_sakai.txt',fp:14}}};
 const UNIT_SPRITE={r:'img/kiba_r.png',l:'img/kiba_l.png',w:30,h:32};
+
+/* ---------- みんなで遊ぶ（通信） ----------
+   Firebase（Cloud Firestore＋匿名ログイン）の接続先。別のFirebaseプロジェクトを使うときは、ここだけ書きかえる。
+   ここに書く内容は公開されても問題ない（だれが何をできるかは、Firebase側のセキュリティルールで決める）。 */
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyBEZCIuc_yXpPpZpt_ihd-6CG-8AgoE2dU",
+  authDomain:"gunyu-e50dc.firebaseapp.com",
+  projectId:"gunyu-e50dc",
+  storageBucket:"gunyu-e50dc.firebasestorage.app",
+  messagingSenderId:"1006905839773",
+  appId:"1:1006905839773:web:34ed80f5b10fe1564cc474"
+};
+// 部屋番号のけた数
+const ROOM_DIGITS=6;

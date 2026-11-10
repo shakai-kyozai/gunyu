@@ -1,0 +1,51 @@
+rules_version = '2';
+// 群雄割拠「みんなで遊ぶ」用のセキュリティルール
+// Firebaseの画面：Firestore → ルール に、この内容をそのまま貼って「公開」する。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function roomPath(code) { return /databases/$(database)/documents/rooms/$(code); }
+    function roomExists(code) { return exists(roomPath(code)); }
+    function isHost(code) { return signedIn() && roomExists(code) && get(roomPath(code)).data.host == request.auth.uid; }
+    function okNick(n) { return n is string && n.size() > 0 && n.size() <= 20; }
+
+    // 部屋：作った人（先生）だけが書きかえ・削除できる
+    match /rooms/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && code.matches('^[0-9]{6}$')
+        && request.resource.data.host == request.auth.uid;
+      allow update: if signedIn() && resource.data.host == request.auth.uid
+        && request.resource.data.host == request.auth.uid;
+      allow delete: if signedIn() && resource.data.host == request.auth.uid;
+
+      // 家の札：同じ家を2人が選ばないようにする
+      match /houses/{h} {
+        allow read: if signedIn();
+        allow create: if signedIn() && roomExists(code)
+          && request.resource.data.uid == request.auth.uid && okNick(request.resource.data.nick);
+        allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isHost(code));
+      }
+
+      // 参加者：自分の分だけ書ける。先生は外せる
+      match /players/{uid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && request.auth.uid == uid && roomExists(code)
+          && okNick(request.resource.data.nick) && request.resource.data.house is string;
+        allow delete: if signedIn() && (request.auth.uid == uid || isHost(code));
+      }
+
+      // 書状：送った人・受けた人・先生だけが読める。返事は受けた人だけ
+      match /letters/{id} {
+        allow read: if signedIn() && (resource.data.from == request.auth.uid
+          || resource.data.to == request.auth.uid || isHost(code));
+        allow create: if signedIn() && request.resource.data.from == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && exists(/databases/$(database)/documents/rooms/$(code)/players/$(request.auth.uid));
+        allow update: if signedIn() && resource.data.to == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.status in ['ok', 'ng']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'answered']);
+      }
+    }
+  }
+}
