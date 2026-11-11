@@ -9,13 +9,27 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 const X0=MAP_BG.x,Y0=MAP_BG.y,MW=MAP_BG.w,MH=MAP_BG.h;
 const KM=1.249,EX=8,HS=4/KM*EX;      // 色の値1.0（4000m）の高さ
 const OS=2;                           // 色をぬる画像：1単位あたりの画素
-const SEG_X=512;
+// 画質：軽い（Chromebook・タブレットなど）／きれい。auto のときは端末から決める
+const Q_KEY='gunyu_q';
+const qPref=()=>{try{return localStorage.getItem(Q_KEY)||'auto';}catch(e){return 'auto';}};
+const autoLite=()=>{const n=navigator;return /CrOS|Android|iPad|iPhone/.test(n.userAgent)||(n.hardwareConcurrency||8)<=4||(n.deviceMemory||8)<=4;};
+let LITE=(()=>{const q=qPref();return q==='auto'?autoLite():q==='lite';})();
+const SEG_X=LITE?256:512;
 const PIECE_H=15;
 // 引きにしたとき：軍勢の駒・札・矢印・にらみの範囲を、ARMY_FADE[0]から小さくうすくし、ARMY_FADE[1]で消す（カメラのきょり）
 const ARMY_FADE=[400,540];
 const toW=(x,y)=>[x-X0-MW/2,y-Y0-MH/2];
 const toG=(wx,wz)=>[wx+X0+MW/2,wz+Y0+MH/2];
 let R=null,host=null,running=false;
+/* 軽い画質：駒と建物の形を、meshoptimizer（形を簡単にするライブラリ）で三角形の数をへらしてから使う。読みこめないときは元の形のまま */
+const SIMP_URL='https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.module.js';
+let SIMP=null;
+async function simplifier(){if(SIMP!==null)return SIMP;try{const m=await import(SIMP_URL);await m.MeshoptSimplifier.ready;SIMP=m.MeshoptSimplifier;}catch(e){console.warn('meshoptimizer',e);SIMP=false;}return SIMP;}
+function slimGeo(geo,ratio){if(!SIMP||!geo.index)return geo;
+  try{const pos=geo.attributes.position;const P=new Float32Array(pos.count*3);for(let i=0;i<pos.count;i++){P[i*3]=pos.getX(i);P[i*3+1]=pos.getY(i);P[i*3+2]=pos.getZ(i);}
+    const idx=new Uint32Array(geo.index.array);const target=Math.max(300,Math.floor(idx.length*ratio/3)*3);if(target>=idx.length)return geo;
+    const [ni]=SIMP.simplify(idx,P,3,target,0.04);if(ni&&ni.length>=300)geo.setIndex(new THREE.BufferAttribute(ni,1));}catch(e){console.warn('slim',e);}
+  return geo;}
 
 /* ---------- 高さ ---------- */
 function hAt(u,v){
@@ -52,7 +66,7 @@ const loadImg=src=>new Promise((ok,ng)=>{const i=new Image();i.crossOrigin='anon
 async function init(){
   const canvas=document.createElement('canvas');canvas.className='v3c';
   let renderer;
-  try{renderer=new THREE.WebGLRenderer({canvas,antialias:true});}catch(e){return false;}
+  try{renderer=new THREE.WebGLRenderer({canvas,antialias:!LITE,powerPreference:'high-performance'});}catch(e){return false;}
   renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   const scene=new THREE.Scene();scene.background=new THREE.Color(0x172842);
@@ -72,7 +86,7 @@ async function init(){
   const loadModel=k=>fetch(VIEW3D.models[k].src).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(parseB64).then(sc=>[k,sc]).catch(e=>{console.warn('model',k,e);return [k,null];});
   try{[hImg,tex,mdl]=await Promise.all([loadImg(VIEW3D.h),new THREE.TextureLoader().loadAsync(VIEW3D.tex),Promise.all(Object.keys(VIEW3D.models).map(loadModel))]);}
   catch(e){console.error(e);return false;}
-  tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=Math.min(LITE?2:8,renderer.capabilities.getMaxAnisotropy());
   const hc=document.createElement('canvas');hc.width=hImg.width;hc.height=hImg.height;
   const hx=hc.getContext('2d');hx.drawImage(hImg,0,0);
   R={canvas,renderer,scene,scene2,camera,controls,HD:hx.getImageData(0,0,hc.width,hc.height).data,hw:hc.width,hh:hc.height};
@@ -92,7 +106,7 @@ async function init(){
   buildFlat();
   for(let i=0;i<pos.count;i++){const u=uv.getX(i),v=1-uv.getY(i);pos.setY(i,hFlat(X0+u*MW,Y0+v*MH,hAt(u,v)*HS));}
   geo.computeVertexNormals();
-  const mat=new THREE.MeshLambertMaterial({map:tex});
+  const mat=new THREE.MeshLambertMaterial({map:tex});if(LITE)mat.defines={LITE_Q:1};
   const detTex=detailTex();R.detTex=detTex;
   // 近づいた区画の高精細の地面（4枚まで）
   R.hi=[0,1,2,3].map(()=>({tex:null,key:null,rect:new THREE.Vector4(0,0,0,0),mix:{value:0},want:0}));
@@ -103,17 +117,21 @@ async function init(){
     sh.fragmentShader=sh.fragmentShader.replace('#include <map_pars_fragment>','#include <map_pars_fragment>\nuniform sampler2D ovMap;uniform sampler2D detMap;uniform sampler2D glowMap;uniform float glowAmt;uniform sampler2D hi0,hi1,hi2,hi3;uniform vec4 hr0,hr1,hr2,hr3;uniform float hm0,hm1,hm2,hm3;')
       .replace('#include <map_fragment>',`#include <map_fragment>
  float hiA=0.0;
+#ifndef LITE_Q
  {vec2 tt=(vMapUv-hr0.xy)/hr0.zw;if(hm0>0.0&&tt.x>=0.0&&tt.x<=1.0&&tt.y>=0.0&&tt.y<=1.0){diffuseColor.rgb=mix(diffuseColor.rgb,texture2D(hi0,tt).rgb,hm0);hiA=max(hiA,hm0);}}
  {vec2 tt=(vMapUv-hr1.xy)/hr1.zw;if(hm1>0.0&&tt.x>=0.0&&tt.x<=1.0&&tt.y>=0.0&&tt.y<=1.0){diffuseColor.rgb=mix(diffuseColor.rgb,texture2D(hi1,tt).rgb,hm1);hiA=max(hiA,hm1);}}
  {vec2 tt=(vMapUv-hr2.xy)/hr2.zw;if(hm2>0.0&&tt.x>=0.0&&tt.x<=1.0&&tt.y>=0.0&&tt.y<=1.0){diffuseColor.rgb=mix(diffuseColor.rgb,texture2D(hi2,tt).rgb,hm2);hiA=max(hiA,hm2);}}
  {vec2 tt=(vMapUv-hr3.xy)/hr3.zw;if(hm3>0.0&&tt.x>=0.0&&tt.x<=1.0&&tt.y>=0.0&&tt.y<=1.0){diffuseColor.rgb=mix(diffuseColor.rgb,texture2D(hi3,tt).rgb,hm3);hiA=max(hiA,hm3);}}
+#endif
 {vec3 b0=pow(max(diffuseColor.rgb,vec3(0.0)),vec3(1.0/2.2));float L=dot(b0,vec3(0.299,0.587,0.114));
+#ifndef LITE_Q
  // 細かな模様：森のこずえ・野原の色むら・田畑のまだら（近づいたときに見える）
  vec3 dA=texture2D(detMap,vMapUv*vec2(10.0,9.31)).rgb;vec3 dB=texture2D(detMap,vMapUv*vec2(40.0,37.2)).rgb;
  float water=smoothstep(0.02,0.07,b0.b-b0.g);float green=smoothstep(0.0,0.10,b0.g-b0.r);float low=smoothstep(0.30,0.42,L);
  float f=(0.9+0.2*dA.r)*mix(1.0,0.72+0.5*dB.g,green*0.8);
  vec3 fld=(vec3(dA.b,dB.b,dA.g)-0.5)*vec3(0.10,0.08,0.03)*low;
  b0=mix(b0*mix(f,1.0,hiA*0.85)+fld*(1.0-hiA),b0,water);
+#endif
  // 家の色：地形の明るさと細かさをのこしたまま、色だけをのせる
  vec4 ov=texture2D(ovMap,vMapUv);float Lo=max(dot(ov.rgb,vec3(0.299,0.587,0.114)),0.12);
  vec3 t=clamp(ov.rgb*(L/Lo)*1.08,0.0,1.0);
@@ -130,8 +148,9 @@ async function init(){
 
   // 兵科ごとの駒（足軽・騎馬・弓・鉄砲・当主）
   R.models={};
+  if(LITE)await simplifier();
   for(const [k,base] of mdl){if(!base)continue;
-    base.traverse(o=>{if(o.isLight)o.visible=false;if(o.isMesh){if(!o.geometry.attributes.normal)o.geometry.computeVertexNormals();const m=o.material;if(m.map)m.map.colorSpace=THREE.SRGBColorSpace;o.material=new THREE.MeshLambertMaterial({map:m.map,color:m.map?0xffffff:(m.color||0xffffff)});}});
+    base.traverse(o=>{if(o.isLight)o.visible=false;if(o.isMesh){if(LITE)slimGeo(o.geometry,0.4);if(!o.geometry.attributes.normal)o.geometry.computeVertexNormals();const m=o.material;if(m.map)m.map.colorSpace=THREE.SRGBColorSpace;o.material=new THREE.MeshLambertMaterial({map:m.map,color:m.map?0xffffff:(m.color||0xffffff)});}});
     const inner=new THREE.Group();inner.add(base);inner.rotation.y=VIEW3D.models[k].yaw||0;
     {const b=new THREE.Box3().setFromObject(inner);const c=b.getCenter(new THREE.Vector3());base.position.sub(new THREE.Vector3(c.x,b.min.y,c.z));}
     const h=new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3()).y;
@@ -173,7 +192,7 @@ async function init(){
 }
 function resize(){if(!R||!host)return;const r=host.getBoundingClientRect();if(!r.width||!r.height)return;
   // 画面の大きさに合わせて描く細かさを変える（小さい画面・低い性能の端末では軽く）
-  const lv=document.documentElement.dataset.ui||'m';R.renderer.setPixelRatio(Math.min(devicePixelRatio,{xs:1.5,s:1.25,m:1.5,l:1.75,xl:2}[lv]||1.5));
+  const lv=document.documentElement.dataset.ui||'m';R.renderer.setPixelRatio(Math.min(devicePixelRatio,LITE?1:({xs:1.5,s:1.25,m:1.5,l:1.75,xl:2}[lv]||1.5))*(R.scale||1));
   R.renderer.setSize(r.width,r.height,false);R.camera.aspect=r.width/r.height;R.camera.updateProjectionMatrix();R.W=r.width;R.H=r.height;}
 
 /* ---------- 地図の建物（城・港・鉱山・寺社・京都・堺） ---------- */
@@ -188,36 +207,43 @@ async function loadProps(){
   const P=VIEW3D.props;const parse=async t=>{const bytes=Uint8Array.from(atob(t.trim()),c=>c.charCodeAt(0));return (await new GLTFLoader().parseAsync(bytes.buffer,'')).scene;};
   // 山城などは何種類かのモデルから地域ごとに選ぶ
   const want={};R.propKey={};for(const a of AREAS){const k=propOf(a);if(!k||!P[k])continue;const srcs=Array.isArray(P[k].src)?P[k].src:[P[k].src];const v=Math.floor(rnd01(a.id)(11)*srcs.length)%srcs.length;const key=k+'#'+v;R.propKey[a.id]=key;(want[key]=want[key]||[]).push(a);}
+  if(LITE)await simplifier();
   R.propG=new THREE.Group();R.scene2.add(R.propG);R.props=[];R.propH={};
   await Promise.all(Object.keys(want).map(async key=>{const [k,vi]=key.split('#');const src=Array.isArray(P[k].src)?P[k].src[+vi]:P[k].src;
     try{const sc=await parse(await fetch(src).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}));
       let mesh=null;sc.updateMatrixWorld(true);sc.traverse(o=>{if(o.isMesh&&!mesh)mesh=o;});if(!mesh)return;
-      const geo=mesh.geometry.clone();geo.applyMatrix4(mesh.matrixWorld);if(!geo.attributes.normal)geo.computeVertexNormals();
+      const geo=mesh.geometry.clone();geo.applyMatrix4(mesh.matrixWorld);if(LITE)slimGeo(geo,0.3);if(!geo.attributes.normal)geo.computeVertexNormals();
       geo.computeBoundingBox();const b=geo.boundingBox.clone();const sx=b.max.x-b.min.x,sz=b.max.z-b.min.z;const s=P[k].fp/Math.max(sx,sz);
       geo.translate(-(b.min.x+b.max.x)/2,-b.min.y,-(b.min.z+b.max.z)/2);geo.scale(s,s,s);
       const map=mesh.material.map;if(map){map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;}
       const list=want[key];const im=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({map}),list.length);
       im.renderOrder=2;im.frustumCulled=false;// 元の形の位置だけで画面外と判定されて消えないように
-      R.propH[key]=(b.max.y-b.min.y)*s;
+      R.propH[key]=(b.max.y-b.min.y)*s;im.userData.rad=Math.hypot(sx,b.max.y-b.min.y,sz)*s*0.6;
       const V_=P[k].vary||{};const col=new THREE.Color();
       list.forEach((a,i)=>{const [x,z]=toW(a.c[0],a.c[1]);const r=rnd01(a.id);
         // 同じ形が並ばないように：向き・大きさ・高さ・色を地域ごとに少しずつ変える
         const rot=(r(1)-0.5)*2*(V_.yaw||0.25);const mir=1;// 左右反転は光の当たり方がおかしくなるので使わない
         const sz=1+(r(3)-0.5)*2*(V_.size||0.08),sh=1+(r(4)-0.5)*2*(V_.height||0.08);
         R.props.push({im,i,a,x,z,y:R.hc[a.id]-0.6,rot,k,sx:sz*mir,sy:sh,sz:sz*(1+(r(5)-0.5)*0.12)});
-        const t=V_.tint||0.06;col.setRGB(1+(r(6)-0.5)*2*t,1+(r(7)-0.5)*2*t*(V_.green?1.6:1),1+(r(8)-0.5)*2*t);const b=1+(r(9)-0.5)*2*(V_.bright||0.06);col.multiplyScalar(b);im.setColorAt(i,col);});
+        const t=V_.tint||0.06;col.setRGB(1+(r(6)-0.5)*2*t,1+(r(7)-0.5)*2*t*(V_.green?1.6:1),1+(r(8)-0.5)*2*t);const b=1+(r(9)-0.5)*2*(V_.bright||0.06);col.multiplyScalar(b);im.setColorAt(i,col);R.props[R.props.length-1].col=col.clone();});
       if(im.instanceColor)im.instanceColor.needsUpdate=true;
       R.propG.add(im);
     }catch(e){console.warn('prop',key,e);}
   }));
   R.propS=null;R.labels.classList.add('props');
 }
+const FRU=new THREE.Frustum(),PM=new THREE.Matrix4(),SPH=new THREE.Sphere();
+// 建物：画面に入っているものだけを描く（InstancedMesh の数を、見えている分だけにつめる）
 function placeProps(ps){
-  if(!R.props||!R.props.length)return;if(R.propS&&Math.abs(ps-R.propS)/R.propS<0.04)return;R.propS=ps;
+  if(!R.props||!R.props.length)return;
+  const cam=R.camera;PM.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);FRU.setFromProjectionMatrix(PM);
+  let key='';for(const o of R.props){SPH.center.set(o.x,o.y,o.z);SPH.radius=(o.im.userData.rad||12)*ps*1.3;o.vis=FRU.intersectsSphere(SPH);key+=o.vis?'1':'0';}
+  if(R.propS&&Math.abs(ps-R.propS)/R.propS<0.04&&key===R.propKeyV)return;R.propS=ps;R.propKeyV=key;
   const m=new THREE.Matrix4(),q=new THREE.Quaternion(),sc=new THREE.Vector3(),p=new THREE.Vector3(),up=new THREE.Vector3(0,1,0);
-  const used=new Set();
-  for(const o of R.props){q.setFromAxisAngle(up,o.rot);sc.set(ps*o.sx,ps*o.sy,ps*o.sz);p.set(o.x,o.y,o.z);m.compose(p,q,sc);o.im.setMatrixAt(o.i,m);used.add(o.im);}
-  for(const im of used)im.instanceMatrix.needsUpdate=true;
+  const n=new Map();
+  for(const o of R.props){if(!n.has(o.im))n.set(o.im,0);if(!o.vis)continue;const j=n.get(o.im);n.set(o.im,j+1);
+    q.setFromAxisAngle(up,o.rot);sc.set(ps*o.sx,ps*o.sy,ps*o.sz);p.set(o.x,o.y,o.z);m.compose(p,q,sc);o.im.setMatrixAt(j,m);if(o.col)o.im.setColorAt(j,o.col);}
+  for(const [im,c] of n){im.count=c;im.visible=c>0;im.instanceMatrix.needsUpdate=true;if(im.instanceColor)im.instanceColor.needsUpdate=true;}
 }
 const propTop=(a,ps)=>{const k=R.props&&R.props.length&&R.propKey?R.propKey[a.id]:null;return k&&R.propH[k]?R.propH[k]*ps:0;};
 
@@ -238,7 +264,7 @@ function detailTex(){const N=512;const c=document.createElement('canvas');c.widt
 
 /* ---------- 高精細の区画を、カメラの近くだけ読みこむ ---------- */
 function updateHi(dist,now){
-  const T=VIEW3D.tiles;if(!T||!R.hi[0].u)return;
+  const T=VIEW3D.tiles;if(LITE||!T||!R.hi[0].u)return;
   const has=new Set(T.list);const want=[];
   if(dist<T.near){const tg=R.controls.target;const [gx,gy]=toG(tg.x,tg.z);
     const fu=(gx-X0)/MW*T.ow/T.ts,fv=(gy-Y0)/MH*T.oh/T.ts;const bx=Math.round(fu)-1,by=Math.round(fv)-1;
@@ -383,7 +409,7 @@ function buildPieces(){
       if(ar.id===UI.sel){const r=new THREE.Mesh(R.geoSel,R.matSel);r.rotation.x=Math.PI/2;r.position.y=0.8;p.add(r);p.userData.sel=r;}
       p.userData.id=ar.id;setOrder(p,2);R.pieceG.add(p);
       const t=document.createElement('div');t.className='t3u'+(ar.h===S.me?' me':'')+(ar.id===UI.sel?' sel':'');t.style.setProperty('--hc',H[ar.h].col);
-      t.innerHTML=`<b>${kamonHTML(ar.h)}</b><span>${ar.u.length}</span>${needsRefill(ar)?'<em>✚</em>':''}`;t.title=hn(ar.h)+'　'+cmdOf(ar).n;
+      t.innerHTML=`<b>${kamonHTML(ar.h)}</b><span>${ar.u.length}</span>${needsRefill(ar)?'<em>✚</em>':''}${ar.h===S.me&&!S.orders[ar.id]&&stays().has(ar.id)?'<i class="t3st">とどまる</i>':''}`;t.title=hn(ar.h)+'　'+cmdOf(ar).n;
       t.onclick=ev=>{ev.stopPropagation();clickArea(a,ar.h,ar.id);};t.oncontextmenu=ev=>{ev.preventDefault();ev.stopPropagation();rightClickArea(a);};
       t.onmousemove=ev=>tip(ev,areaTip(a));t.onmouseleave=()=>tip(null);
       const nm=document.createElement('div');nm.className='t3n'+(ar.h===S.me?' me':'')+(ar.id===UI.sel?' sel':'');nm.style.setProperty('--hc',H[ar.h].col);nm.innerHTML=`<span class="nn">${esc(cmdOf(ar).n)}の軍勢</span><b class="nt">${(totU(ar)*100).toLocaleString()}</b>`;
@@ -511,9 +537,15 @@ function frame(now){
   if(!R.canvas.isConnected){running=false;return;}
   requestAnimationFrame(frame);
   // 描く回数をへらして軽くする：さわっている間・動きのあるときは毎回、何もしないときは1秒に12回、上に画面（合戦・結果など）が出ているときは1秒に4回
-  {const act=R.tw||R.anim||now-(R.lastAct||0)<1500;const cov=document.getElementById('dlg');const covered=cov&&cov.classList.contains('on');
+  // 軽い画質：動かしている間は1秒に30回まで、止まっているときは点滅するもの（選んだ軍勢の輪・矢印）があるときだけ1秒に5回、なければ1秒に1回
+  {const act=R.tw||R.anim||now-(R.lastAct||0)<(LITE?600:1500);const cov=document.getElementById('dlg');const covered=cov&&cov.classList.contains('on');
     // ほかのウィンドウを操作しているとき（1台で何人分も開いているときなど）は、1秒に2〜3回だけ描く
-    const unf=!document.hasFocus();const gap=covered?250:act?0:unf?400:80;if(gap&&now-(R.lastDraw||0)<gap)return;R.lastDraw=now;}
+    const unf=!document.hasFocus();const pulse=!!((R.arrowMats&&R.arrowMats.length)||UI.sel);
+    const gap=covered?(LITE?700:250):act?(LITE?30:0):unf?500:LITE?(pulse?200:1000):(pulse?80:250);if(gap&&now-(R.lastDraw||0)<gap)return;
+    // 描くのがおそい端末では、描く細かさを自動で下げる（動かしている間の1こまの時間をはかる）
+    if(act&&R.lastDraw&&R.wasAct){const d=now-R.lastDraw;if(d<1200){R.ft=R.ft?R.ft*0.8+d*0.2:d;R.ftN=(R.ftN||0)+1;
+      if(R.ftN>12&&R.ft>55&&(R.scale||1)>0.55){R.scale=Math.max(0.55,(R.scale||1)-0.15);R.ftN=0;R.ft=0;resize();}}}
+    R.wasAct=!!act;R.lastDraw=now;}
   const dt=Math.min(0.05,(now-R.clock)/1000);R.clock=now;
   const cam=R.camera,ctl=R.controls;
   if(R.tw){const t=Math.min(1,(now-R.tw.t0)/R.tw.dur);const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
@@ -528,13 +560,13 @@ function frame(now){
   if(R.tagBox){const op=aOn?af.toFixed(2):'0';if(R.tagOp!==op){R.tagOp=op;R.tagBox.style.opacity=op;R.tagBox.style.visibility=aOn?'':'hidden';}}
   for(const g of R.pieceG.children){g.scale.setScalar(ps*ak);if(g.userData.sel){g.userData.sel.material.opacity=0.55+0.45*Math.sin(now/260);}}
   updateHi(dist,now);
-  const k=lodOf(dist);if(!R.arrowK||Math.abs(k-R.arrowK)/R.arrowK>0.12){buildArrows(k);buildBorders(k);buildRoads(k);}
+  const k=lodOf(dist);{const kch=!R.roadK||Math.abs(k-R.roadK)/R.roadK>(LITE?0.25:0.12);if(kch){R.roadK=k;buildRoads(k);}if(kch||R.dArrow){R.dArrow=false;buildArrows(k);}if(kch||R.dBorder){R.dBorder=false;buildBorders(k);}}
   R.dash.offset.x-=dt*1.2;
   const pulse=0.72+0.28*Math.sin(now/420);for(const m of R.arrowMats||[])if(m.color&&m!==undefined)m.opacity=(m.map?1:m.color.getHex()===0xfffdf6?0.85:1)*pulse*(R.af==null?1:R.af);
   // 移動のアニメーション
   if(R.anim)stepAnim(now,ps);
   // 建物は画面の上でほぼ同じ大きさ（最初のアイコンより少し大きいくらい）に見えるようにする。近づいたときだけ少し大きく見える
-  const pps=Math.max(0.6,Math.min(1.5,dist/470));placeProps(pps);
+  const pps=Math.max(0.6,Math.min(1.5,dist/470));cam.updateMatrixWorld();placeProps(pps);
   R.renderer.render(R.scene,cam);R.renderer.autoClear=false;R.renderer.render(R.scene2,cam);R.renderer.autoClear=true;
   // 地名
   const band=dist>1250?0:dist>650?1:2;
@@ -599,11 +631,30 @@ const T3D={
     if(!running){running=true;R.clock=performance.now();requestAnimationFrame(frame);}
     if(VIEW3D.props&&!R.propsLoading)setTimeout(()=>loadProps(),50);
     // 高解像度の地面（4096px）を、ほかの読みこみが終わったあとで差しかえる
-    if(VIEW3D.texHi&&!R.hiLoading&&R.renderer.capabilities.maxTextureSize>=4096){R.hiLoading=true;setTimeout(()=>{new THREE.TextureLoader().loadAsync(VIEW3D.texHi).then(t=>{t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=Math.min(8,R.renderer.capabilities.getMaxAnisotropy());t.generateMipmaps=true;const m=R.land.material;const old=m.map;m.map=t;m.needsUpdate=true;if(old)old.dispose();}).catch(e=>console.warn('texHi',e));},1500);}
+    if(!LITE&&VIEW3D.texHi&&!R.hiLoading&&R.renderer.capabilities.maxTextureSize>=4096){R.hiLoading=true;setTimeout(()=>{new THREE.TextureLoader().loadAsync(VIEW3D.texHi).then(t=>{t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=Math.min(8,R.renderer.capabilities.getMaxAnisotropy());t.generateMipmaps=true;const m=R.land.material;const old=m.map;m.map=t;m.needsUpdate=true;if(old)old.dispose();}).catch(e=>console.warn('texHi',e));},1500);}
     return true;
   },
   unmount(){running=false;if(R){R.canvas.remove();R.labels.remove();R.ro.disconnect();}host=null;},
-  update(){if(!R||!S||!host)return;R.lastAct=performance.now();for(const L of R.alab){const sg=S.siege&&S.siege[L.a.id];const sp=L.d.querySelector('span');if(sp)sp.textContent=sg?`${L.a.n}（籠城 あと${sg.left}）`:L.a.n;L.d.classList.toggle('sg',!!sg);}drawOverlay();buildPieces();buildZoc();buildHouseNames();R.arrowK=null;},
+  update(){if(!R||!S||!host)return;R.lastAct=performance.now();for(const L of R.alab){const sg=S.siege&&S.siege[L.a.id];const sp=L.d.querySelector('span');if(sp)sp.textContent=sg?`${L.a.n}（籠城 あと${sg.left}）`:L.a.n;L.d.classList.toggle('sg',!!sg);}
+    // 変わったものだけを描き直す（クリックのたびに全部を描き直すと重いため）
+    const me=S.me;const own=JSON.stringify(S.own)+JSON.stringify(S.lord||{})+UI.mapMode+me;
+    const rels=UI.mapMode==='dip'?Object.keys(H).map(h=>dipKey(h)[0]).join(''):'';
+    const zoc=S.dead[me]?'':[...zocOf(me)].sort().join(',');
+    const sg=k=>{const c=R.sig||(R.sig={});return (v,f)=>{if(c[k]===v)return;c[k]=v;f();};};
+    sg('ov')(own+rels+zoc+'|'+(UI.reach?Object.keys(UI.reach).join(','):'')+'|'+(UI.area||'')+'|'+(UI.warnH||'')+'|'+(R.glowW||1),drawOverlay);
+    sg('pc')(JSON.stringify(S.armies.map(a=>[a.id,a.a,a.h,a.cmd,a.face,a.u.map(u=>u.t[0]+Math.round(u.n*10)).join('')]))+S.turn+JSON.stringify(S.orders)+'|'+UI.sel+'|'+rels+'|'+[...stays()].join(','),buildPieces);
+    sg('zc')(zoc,buildZoc);
+    sg('hn')(own+(UI.hideNames?1:0),buildHouseNames);
+    sg('bd')(own+rels,()=>{R.dBorder=true;});
+    sg('ar')(JSON.stringify(S.orders)+'|'+UI.sel+'|'+(UI.replay?1:0)+'|'+S.turn+'|'+S.armies.length,()=>{R.dArrow=true;});},
+  // 画質を変える（auto・lite・full）。地形の細かさと輪郭のなめらかさは、次に開いたときから変わる
+  quality(q){if(q){try{localStorage.setItem(Q_KEY,q);}catch(e){}LITE=q==='auto'?autoLite():q==='lite';if(R){R.scale=1;R.ft=0;R.ftN=0;const m=R.land.material;m.defines=LITE?{LITE_Q:1}:{};m.needsUpdate=true;resize();R.lastAct=performance.now();}}return {pref:qPref(),lite:LITE};},
+  stats(){return R?{...R.renderer.info.render,scale:R.scale||1,lite:LITE,ft:Math.round(R.ft||0),ftN:R.ftN||0,pr:R.renderer.getPixelRatio()}:null;},
+  // 矢印ボタン・矢印キーで地図を動かす（dx,dy：画面の右・下を正とする。1で画面のおよそ3割）
+  pan(dx,dy){if(!R)return;const cam=R.camera,ctl=R.controls;const f=new THREE.Vector3();cam.getWorldDirection(f);f.y=0;if(f.lengthSq()<1e-6)f.set(0,0,-1);f.normalize();const r=new THREE.Vector3(-f.z,0,f.x);
+    const d=cam.position.distanceTo(ctl.target)*0.3;const q0=R.tw?R.tw.q1.clone():ctl.target.clone(),p0=R.tw?R.tw.p1.clone():cam.position.clone();
+    const mv=r.multiplyScalar(dx*d).add(f.multiplyScalar(-dy*d));const q1=q0.clone().add(mv);q1.x=Math.max(-MW/2,Math.min(MW/2,q1.x));q1.z=Math.max(-MH/2,Math.min(MH/2,q1.z));mv.copy(q1).sub(q0);
+    R.tw={t0:performance.now(),dur:220,p0:cam.position.clone(),q0:ctl.target.clone(),q1,p1:p0.add(mv)};R.lastAct=performance.now();},
   view(target,dist,dur=600){const cam=R.camera,ctl=R.controls;
     // 今の向きを保ったまま、近づく・離れる
     const dir=cam.position.clone().sub(ctl.target);if(dir.length()<1)dir.set(0,0.74,0.67);dir.normalize();
