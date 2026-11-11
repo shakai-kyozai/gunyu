@@ -11,9 +11,12 @@ const KM=1.249,EX=8,HS=4/KM*EX;      // 色の値1.0（4000m）の高さ
 const OS=2;                           // 色をぬる画像：1単位あたりの画素
 // 画質：軽い（Chromebook・タブレットなど）／きれい。auto のときは端末から決める
 const Q_KEY='gunyu_q';
-const qPref=()=>{try{return localStorage.getItem(Q_KEY)||'auto';}catch(e){return 'auto';}};
-const autoLite=()=>{const n=navigator;return /CrOS|Android|iPad|iPhone/.test(n.userAgent)||(n.hardwareConcurrency||8)<=4||(n.deviceMemory||8)<=4;};
-let LITE=(()=>{const q=qPref();return q==='auto'?autoLite():q==='lite';})();
+// 標準は「きれい」。重いときだけ手動で「軽い」にする
+const qPref=()=>{try{return localStorage.getItem(Q_KEY)==='lite'?'lite':'full';}catch(e){return 'full';}};
+let LITE=qPref()==='lite';
+// 駒と建物の三角形を、元の何割にへらすか（軽い／きれい）
+const SLIM={lite:{piece:0.4,prop:0.3,err:0.04},full:{piece:0.7,prop:0.6,err:0.02}};
+const slimCfg=()=>SLIM[LITE?'lite':'full'];
 const SEG_X=LITE?256:512;
 const PIECE_H=15;
 // 引きにしたとき：軍勢の駒・札・矢印・にらみの範囲を、ARMY_FADE[0]から小さくうすくし、ARMY_FADE[1]で消す（カメラのきょり）
@@ -28,7 +31,7 @@ async function simplifier(){if(SIMP!==null)return SIMP;try{const m=await import(
 function slimGeo(geo,ratio){if(!SIMP||!geo.index)return geo;
   try{const pos=geo.attributes.position;const P=new Float32Array(pos.count*3);for(let i=0;i<pos.count;i++){P[i*3]=pos.getX(i);P[i*3+1]=pos.getY(i);P[i*3+2]=pos.getZ(i);}
     const idx=new Uint32Array(geo.index.array);const target=Math.max(300,Math.floor(idx.length*ratio/3)*3);if(target>=idx.length)return geo;
-    const [ni]=SIMP.simplify(idx,P,3,target,0.04);if(ni&&ni.length>=300)geo.setIndex(new THREE.BufferAttribute(ni,1));}catch(e){console.warn('slim',e);}
+    const [ni]=SIMP.simplify(idx,P,3,target,slimCfg().err);if(ni&&ni.length>=300)geo.setIndex(new THREE.BufferAttribute(ni,1));}catch(e){console.warn('slim',e);}
   return geo;}
 
 /* ---------- 高さ ---------- */
@@ -148,9 +151,9 @@ async function init(){
 
   // 兵科ごとの駒（足軽・騎馬・弓・鉄砲・当主）
   R.models={};
-  if(LITE)await simplifier();
+  await simplifier();
   for(const [k,base] of mdl){if(!base)continue;
-    base.traverse(o=>{if(o.isLight)o.visible=false;if(o.isMesh){if(LITE)slimGeo(o.geometry,0.4);if(!o.geometry.attributes.normal)o.geometry.computeVertexNormals();const m=o.material;if(m.map)m.map.colorSpace=THREE.SRGBColorSpace;o.material=new THREE.MeshLambertMaterial({map:m.map,color:m.map?0xffffff:(m.color||0xffffff)});}});
+    base.traverse(o=>{if(o.isLight)o.visible=false;if(o.isMesh){slimGeo(o.geometry,slimCfg().piece);if(!o.geometry.attributes.normal)o.geometry.computeVertexNormals();const m=o.material;if(m.map)m.map.colorSpace=THREE.SRGBColorSpace;o.material=new THREE.MeshLambertMaterial({map:m.map,color:m.map?0xffffff:(m.color||0xffffff)});}});
     const inner=new THREE.Group();inner.add(base);inner.rotation.y=VIEW3D.models[k].yaw||0;
     {const b=new THREE.Box3().setFromObject(inner);const c=b.getCenter(new THREE.Vector3());base.position.sub(new THREE.Vector3(c.x,b.min.y,c.z));}
     const h=new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3()).y;
@@ -207,12 +210,12 @@ async function loadProps(){
   const P=VIEW3D.props;const parse=async t=>{const bytes=Uint8Array.from(atob(t.trim()),c=>c.charCodeAt(0));return (await new GLTFLoader().parseAsync(bytes.buffer,'')).scene;};
   // 山城などは何種類かのモデルから地域ごとに選ぶ
   const want={};R.propKey={};for(const a of AREAS){const k=propOf(a);if(!k||!P[k])continue;const srcs=Array.isArray(P[k].src)?P[k].src:[P[k].src];const v=Math.floor(rnd01(a.id)(11)*srcs.length)%srcs.length;const key=k+'#'+v;R.propKey[a.id]=key;(want[key]=want[key]||[]).push(a);}
-  if(LITE)await simplifier();
+  await simplifier();
   R.propG=new THREE.Group();R.scene2.add(R.propG);R.props=[];R.propH={};
   await Promise.all(Object.keys(want).map(async key=>{const [k,vi]=key.split('#');const src=Array.isArray(P[k].src)?P[k].src[+vi]:P[k].src;
     try{const sc=await parse(await fetch(src).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}));
       let mesh=null;sc.updateMatrixWorld(true);sc.traverse(o=>{if(o.isMesh&&!mesh)mesh=o;});if(!mesh)return;
-      const geo=mesh.geometry.clone();geo.applyMatrix4(mesh.matrixWorld);if(LITE)slimGeo(geo,0.3);if(!geo.attributes.normal)geo.computeVertexNormals();
+      const geo=mesh.geometry.clone();geo.applyMatrix4(mesh.matrixWorld);slimGeo(geo,slimCfg().prop);if(!geo.attributes.normal)geo.computeVertexNormals();
       geo.computeBoundingBox();const b=geo.boundingBox.clone();const sx=b.max.x-b.min.x,sz=b.max.z-b.min.z;const s=P[k].fp/Math.max(sx,sz);
       geo.translate(-(b.min.x+b.max.x)/2,-b.min.y,-(b.min.z+b.max.z)/2);geo.scale(s,s,s);
       const map=mesh.material.map;if(map){map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;}
@@ -548,9 +551,13 @@ function frame(now){
     R.wasAct=!!act;R.lastDraw=now;}
   const dt=Math.min(0.05,(now-R.clock)/1000);R.clock=now;
   const cam=R.camera,ctl=R.controls;
+  if(R.rot){const t=Math.min(1,(now-R.rot.t0)/R.rot.dur);const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;const a=R.rot.a0+(R.rot.a1-R.rot.a0)*e;
+    cam.position.set(ctl.target.x+Math.sin(a)*R.rot.r,ctl.target.y+R.rot.h,ctl.target.z+Math.cos(a)*R.rot.r);if(t>=1)R.rot=null;}
   if(R.tw){const t=Math.min(1,(now-R.tw.t0)/R.tw.dur);const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
     cam.position.lerpVectors(R.tw.p0,R.tw.p1,e);ctl.target.lerpVectors(R.tw.q0,R.tw.q1,e);if(t>=1)R.tw=null;}
   ctl.update();
+  // 方位磁針（北の向き）
+  {const az=Math.atan2(cam.position.x-ctl.target.x,cam.position.z-ctl.target.z);if(R.azS==null||Math.abs(az-R.azS)>0.01){R.azS=az;const n=document.getElementById('cmpN');if(n)n.style.transform=`rotate(${(az*180/Math.PI).toFixed(1)}deg)`;}}
   const dist=cam.position.distanceTo(ctl.target);
   // 遠くから見るときは駒を大きく
   const ps=Math.max(0.6,Math.min(2.3,dist/700));
@@ -648,7 +655,13 @@ const T3D={
     sg('bd')(own+rels,()=>{R.dBorder=true;});
     sg('ar')(JSON.stringify(S.orders)+'|'+UI.sel+'|'+(UI.replay?1:0)+'|'+S.turn+'|'+S.armies.length,()=>{R.dArrow=true;});},
   // 画質を変える（auto・lite・full）。地形の細かさと輪郭のなめらかさは、次に開いたときから変わる
-  quality(q){if(q){try{localStorage.setItem(Q_KEY,q);}catch(e){}LITE=q==='auto'?autoLite():q==='lite';if(R){R.scale=1;R.ft=0;R.ftN=0;const m=R.land.material;m.defines=LITE?{LITE_Q:1}:{};m.needsUpdate=true;resize();R.lastAct=performance.now();}}return {pref:qPref(),lite:LITE};},
+  quality(q){if(q){try{localStorage.setItem(Q_KEY,q);}catch(e){}LITE=q==='lite';if(R){R.scale=1;R.ft=0;R.ftN=0;const m=R.land.material;m.defines=LITE?{LITE_Q:1}:{};m.needsUpdate=true;resize();R.lastAct=performance.now();}}return {pref:qPref(),lite:LITE};},
+  // 地図を回す（45度ずつ）。dir：+1で右回り、-1で左回り、0で北を上にもどす
+  rotate(dir){if(!R)return;const cam=R.camera,ctl=R.controls;if(R.tw){cam.position.copy(R.tw.p1);ctl.target.copy(R.tw.q1);R.tw=null;}
+    const dx=cam.position.x-ctl.target.x,dz=cam.position.z-ctl.target.z;const r=Math.hypot(dx,dz),h=cam.position.y-ctl.target.y;
+    const a0=R.rot?R.rot.a1:Math.atan2(dx,dz);const st=Math.PI/4;let a1=dir===0?0:(Math.round(a0/st)+dir)*st;
+    if(dir===0){while(a1-a0>Math.PI)a1-=2*Math.PI;while(a0-a1>Math.PI)a1+=2*Math.PI;}
+    R.rot={t0:performance.now(),dur:380,a0:Math.atan2(dx,dz),a1,r,h};R.lastAct=performance.now();},
   stats(){return R?{...R.renderer.info.render,scale:R.scale||1,lite:LITE,ft:Math.round(R.ft||0),ftN:R.ftN||0,pr:R.renderer.getPixelRatio()}:null;},
   // 矢印ボタン・矢印キーで地図を動かす（dx,dy：画面の右・下を正とする。1で画面のおよそ3割）
   pan(dx,dy){if(!R)return;const cam=R.camera,ctl=R.controls;const f=new THREE.Vector3();cam.getWorldDirection(f);f.y=0;if(f.lengthSq()<1e-6)f.set(0,0,-1);f.normalize();const r=new THREE.Vector3(-f.z,0,f.x);

@@ -2,7 +2,7 @@
    群雄割拠　画面
    ========================================================= */
 const SVGNS='http://www.w3.org/2000/svg';
-let UI={v3:(()=>{try{return localStorage.getItem('kunitori_view')!=='2d';}catch(e){return true;}})(),mapMode:'dip',cards:new Set(),sel:null,area:null,mode:null,reach:null,vb:null,phase:'plan'};
+let UI={v3:!window.GUNYU_FLAT,mapMode:'dip',cards:new Set(),sel:null,area:null,mode:null,reach:null,vb:null,phase:'plan'};
 function el(tag,attrs,parent){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 const fmt=n=>Math.round(n);
@@ -1331,8 +1331,12 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
 }
 function startUI(){
   $('#app').innerHTML=`<div class="topbar" id="topTabs"></div><div class="game dkg"><div class="mapw"><svg id="map"></svg><div id="dock"></div>
-   <div class="zm"><button type="button" class="zb" onclick="zoom(0.75)" title="ズームイン">＋</button><button type="button" class="zb" onclick="zoom(1.33)" title="ズームアウト">－</button><button type="button" class="zb t" onclick="fitMap()">全国</button><button type="button" class="zb t" onclick="focusMe()">わが家</button><button type="button" class="zb t v3b" id="b3d" onclick="set3D(!UI.v3)"></button><button type="button" class="zb t" id="bUi" onclick="cycleUi()" title="画面の文字やボタンの大きさ"></button></div>
-   <div class="dpad" title="地図を動かす（キーボードの矢印キーでも動く）"><button type="button" class="dp u" data-d="0,-1">▲</button><button type="button" class="dp l" data-d="-1,0">◀</button><button type="button" class="dp r" data-d="1,0">▶</button><button type="button" class="dp d" data-d="0,1">▼</button></div>
+   <div class="mctl" title="地図の操作（キーボードの矢印キーでも動く）">
+    <div class="mrow"><button type="button" class="zb t" onclick="fitMap()" title="全国を見る">全国</button><button type="button" class="zb t" onclick="focusMe()" title="自分の領地を見る">わが家</button></div>
+    <div class="mrow"><button type="button" class="zb" onclick="zoom(0.75)" title="近づく">＋</button><button type="button" class="zb" onclick="zoom(1.33)" title="遠ざかる">－</button></div>
+    <div class="mrow rot"><button type="button" class="zb" onclick="T3D.rotate(-1)" title="左へ45度まわす">↺</button><button type="button" class="zb cmp" onclick="T3D.rotate(0)" title="北を上にもどす"><i id="cmpN"></i><b>北</b></button><button type="button" class="zb" onclick="T3D.rotate(1)" title="右へ45度まわす">↻</button></div>
+    <div class="dpad"><button type="button" class="dp u" data-d="0,-1" title="上へ">▲</button><button type="button" class="dp l" data-d="-1,0" title="左へ">◀</button><button type="button" class="dp r" data-d="1,0" title="右へ">▶</button><button type="button" class="dp d" data-d="0,1" title="下へ">▼</button></div>
+   </div>
    <div class="mmode"><button type="button" class="btn small" id="mDip" onclick="setMode('dip')">外交の色</button><button type="button" class="btn small" id="mPow" onclick="setMode('pow')">家ごとの色</button><button type="button" class="btn small" id="mTer" onclick="setMode('ter')">地形</button><span id="dipLeg"></span><span class="mmx"><button type="button" class="btn small" id="bQ" onclick="cycleQ()" title="立体の地図の画質。動きが重いときは「軽い」にする"></button><button type="button" class="btn small" onclick="howDlg()" title="ゲームの流れを見る">ゲームの流れ</button></span></div>
 </div><div id="side"><div id="panel"></div><div class="legend" onclick="this.classList.toggle('open')"><span class="lgt">凡例を見る ▸</span><span class="lgc">${Object.keys(KIND).map(k=>`<svg class="lgi" viewBox="0 0 512 512"><use href="#ic-${k}"/></svg>${KIND[k].n}`).join(' ')}　<span class="lg2d"><span class="lr main"></span>主な街道 <span class="lr mtn"></span>山道 </span><span class="v3only">街道は地図に描きこみ（軍勢は街道にそって動く） </span><span class="lr sea"></span>海路　右下の数字は部隊の数（1部隊＝最大1000人）　大きな印は国の拠点の城　<span class="zocl"></span>赤い斜線＝敵の軍勢がいる地域（にらみの範囲）：入るとそこで止まり、その敵と戦う<span class="v3only"><br>右クリック：選んだ軍勢をその地域へ進める　立体の地図：ドラッグで動かす・右ドラッグで回す・ホイールで拡大　標高：国土地理院（高さは8倍に強調）</span></span></div><div id="journal"></div></div></div>`;
   initPad();qUI();
@@ -1348,11 +1352,11 @@ function initPad(){const stop=()=>{if(PAD.id){clearInterval(PAD.id);PAD.id=0;}};
   if(!PAD.key){PAD.key=1;document.addEventListener('keydown',e=>{const d={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]}[e.key];if(!d||!S||!document.querySelector('.mapw'))return;
     const t=e.target;if(t&&/INPUT|TEXTAREA|SELECT/.test(t.tagName))return;const dl=$('#dlg');if(dl&&dl.classList.contains('on'))return;e.preventDefault();panMap(d[0],d[1]);});}}
 /* ---------- 立体の地図の画質 ---------- */
-function qUI(){const b=$('#bQ');if(!b)return;const q=window.T3D&&T3D.quality?T3D.quality():null;let pref='auto';try{pref=localStorage.getItem('gunyu_q')||'auto';}catch(e){}
-  b.textContent='画質：'+(pref==='auto'?'自動':pref==='lite'?'軽い':'きれい');}
-function cycleQ(){let pref='auto';try{pref=localStorage.getItem('gunyu_q')||'auto';}catch(e){}const nx={auto:'lite',lite:'full',full:'auto'}[pref];
+const qNow=()=>{try{return localStorage.getItem('gunyu_q')==='lite'?'lite':'full';}catch(e){return 'full';}};
+function qUI(){const b=$('#bQ');if(b)b.textContent='画質：'+(qNow()==='lite'?'軽い':'きれい');}
+function cycleQ(){const nx=qNow()==='lite'?'full':'lite';
   if(window.T3D&&T3D.quality)T3D.quality(nx);else{try{localStorage.setItem('gunyu_q',nx);}catch(e){}}qUI();
-  toast(nx==='lite'?'画質を「軽い」にした。動きが軽くなる（地形の細かさは、次に開いたときから変わる）':nx==='full'?'画質を「きれい」にした（地形の細かさは、次に開いたときから変わる）':'画質を「自動」にした。端末に合わせて決める',false,3600);}
+  toast(nx==='lite'?'画質を「軽い」にした。動きが重いときに使う（地形・駒・建物の細かさは、次に開いたときから変わる）':'画質を「きれい」にした（地形・駒・建物の細かさは、次に開いたときから変わる）',false,3600);}
 /* ---------- ゲームの流れ（はじめに1回出す。「流れ」のボタンでも出せる） ---------- */
 function howDlg(next){UI.howSeen=true;const go=next?'UI.howNext()':'closeDlg()';UI.howNext=()=>{closeDlg();next&&next();};
   const st=(n,ic,t,d,w)=>`<div class="hw"><i class="hwn">${n}</i><span class="hwi">${ic}</span><b>${t}</b><small>${d}</small><em>${w}</em></div>`;
@@ -1377,7 +1381,7 @@ function howDlg(next){UI.howSeen=true;const go=next?'UI.howNext()':'closeDlg()';
 const on3D=()=>!!(UI.v3&&window.T3D&&T3D.ready&&document.querySelector('.mapw.v3'));
 function with3D(fn){if(window.T3D)fn();else window.onT3D=fn;}
 function set3D(on,first){
-  UI.v3=on;if(!first){try{localStorage.setItem('kunitori_view',on?'3d':'2d');}catch(e){}}
+  UI.v3=on;
   const mw=document.querySelector('.mapw');const b=$('#b3d');
   if(b){b.textContent=on?'平面':'立体';b.title=on?'平面の地図にする':'立体の地図にする';}
   if(!mw)return;
@@ -1385,7 +1389,7 @@ function set3D(on,first){
   with3D(async()=>{if(!UI.v3||!mw.isConnected)return;
     mw.classList.add('v3');
     const ok=await T3D.mount(mw);
-    if(!ok){if(T3D.failed){mw.classList.remove('v3');UI.v3=false;if(b){b.textContent='立体';}alertMsg('この端末では立体の地図を表示できないため、平面の地図で表示する。');}return;}
+    if(!ok){if(T3D.failed){mw.classList.remove('v3');UI.v3=false;drawMap();alertMsg('この端末では立体の地図を表示できないため、平面の地図で表示する。');}return;}
     if(!UI.v3){T3D.unmount();mw.classList.remove('v3');return;}
     focusMe();});
 }
@@ -1395,7 +1399,8 @@ const UI_LV={xs:{z:0.92,n:'小'},s:{z:0.88,n:'小'},m:{z:1,n:'中'},l:{z:1.12,n:
 const UI_ORDER=['xs','s','m','l','xl'];
 function autoUiLevel(){const w=innerWidth,h=innerHeight;if(w<760||w<h*0.9&&w<1000)return 'xs';
   const bw=w<1100?1:w<1600?2:w<1900?3:4,bh=h<600?1:h<860?2:h<1020?3:4;return UI_ORDER[Math.min(bw,bh)];}
-function uiPref(){try{return localStorage.getItem('kunitori_ui')||'auto';}catch(e){return 'auto';}}
+// 表示の大きさは、いつも画面に合わせて自動で決める
+function uiPref(){return 'auto';}
 function applyUi(){const pref=uiPref();const auto=autoUiLevel();
   // 並べ方は画面の形で決める（スマホ・縦長なら地図の下に操作の欄）。大きさは「表示」ボタンで選んだものを優先
   const lv=auto==='xs'?'xs':(pref==='auto'?auto:pref);const z=UI_LV[pref==='auto'?auto:pref].z;
