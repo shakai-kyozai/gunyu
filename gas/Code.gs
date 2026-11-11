@@ -28,7 +28,7 @@ function latestVersion_() {
     ['GitHubのVERSIONファイル', function () {
       var r = UrlFetchApp.fetch('https://raw.githubusercontent.com/' + GH_USER + '/' + GH_REPO + '/main/VERSION?t=' + Date.now(), {muteHttpExceptions: true});
       var s = r.getResponseCode() === 200 ? r.getContentText().trim() : '';
-      return /^v[0-9a-z.-]+$/.test(s) ? s : null;
+      return /^[0-9a-f]{40}$/.test(s) ? s : null;
     }],
     ['GitHubのAPI', function () {
       var r = UrlFetchApp.fetch('https://api.github.com/repos/' + GH_USER + '/' + GH_REPO + '/commits/main', {muteHttpExceptions: true, headers: {Accept: 'application/vnd.github.sha'}});
