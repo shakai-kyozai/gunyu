@@ -1338,12 +1338,12 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
    <p>あなたは戦国大名の当主である。兵を集め、街道を通って軍勢を進め、城を取って領地を広げよう。となりの家と同盟を結び、ときには裏切りながら、天下統一をめざす。</p>
    <div class="hpick"><button type="button" id="hprev" title="クリックして家を選ぶ"></button></div>
    <div class="tnick"><label>ニックネーム <input type="text" id="nick" maxlength="12" placeholder="例：たろう" autocomplete="off"></label><span class="hint">外交の画面で、だれが動かしている家かがわかるように出る</span></div>
-   <div class="tpace"><span class="tpl">進め方</span>${[['std',`ふつう`,`1ターン2年・${YEARS_BASE.length}ターン`],['long','ロング',`1ターン1年・${yearsFor('long').length}ターン`],['rt','リアルタイム','時間が流れつづける']].map(([k,n,d],i)=>`<label class="tpo"><input type="radio" name="pace" value="${k}" ${i?'':'checked'}><b>${n}</b><small>${d}</small></label>`).join('')}</div>
+   <div class="tpace"><span class="tpl">進め方</span>${[['std',`ふつう`,`1ターン2年・${YEARS_BASE.length}ターン`],['long','ロング',`1ターン1年・${yearsFor('long').length}ターン`],['rt','リアルタイム','時間が流れつづける']].filter(x=>x[0]!=='rt'||(typeof SHOW_RT!=='undefined'&&SHOW_RT)).map(([k,n,d],i)=>`<label class="tpo"><input type="radio" name="pace" value="${k}" ${i?'':'checked'}><b>${n}</b><small>${d}</small></label>`).join('')}</div>
    <div class="tmode"><button class="btn pri tmb" type="button" id="go"><b>一人で遊ぶ</b><small>ほかの家はコンピューターが動かす</small></button><button class="btn tmb" type="button" id="goMulti"><b>みんなで遊ぶ</b><small>クラスのみんなが家を1つずつ動かす</small></button></div>
    <div class="row">${sv&&sv.S&&!sv.S.ended?`<button class="btn" type="button" id="cont">つづきから（${yearsFor(sv.S.pace)[sv.S.turn]}年・${H[sv.S.me].n}家${sv.S.pace==='rt'?'・リアルタイム':sv.S.pace==='long'?'・ロング':''}）</button>`:''}</div>
    <details><summary>ルールのまとめ</summary><ul>
-    <li>進め方は3つ。「ふつう」は1ターン2年で${YEARS_BASE.length}ターン、「ロング」は1ターン1年で${yearsFor('long').length}ターン。1ターンに命令を出せる時間は2分で、時間になると、命令を出していない軍勢はその場にとどまる。</li>
-    <li>「リアルタイム」はターンがなく、時間が流れつづける。行き先を決めた軍勢はすぐに進みはじめ、主な街道は1か月、山道・海路は2か月で次の地域に着く。金は月ごとに入る。時計は止めたり、速さを変えたりできる。</li>
+    <li>進め方は「ふつう」と「ロング」。「ふつう」は1ターン2年で${YEARS_BASE.length}ターン、「ロング」は1ターン1年で${yearsFor('long').length}ターン。1ターンに命令を出せる時間は2分で、時間になると、命令を出していない軍勢はその場にとどまる。</li>
+    ${typeof SHOW_RT!=='undefined'&&SHOW_RT?`<li>「リアルタイム」はターンがなく、時間が流れつづける。行き先を決めた軍勢はすぐに進みはじめ、主な街道は1か月、山道・海路は2か月で次の地域に着く。金は月ごとに入る。時計は止めたり、速さを変えたりできる。</li>`:''}
     <li>兵は4種類：歩（足軽）・騎（騎馬）・弓・鉄（鉄砲）。歩は騎に強く、騎は弓・鉄に強く、弓・鉄は歩に強い。</li>
     <li>戦いは「射撃戦→鑓合わせ→打撃→乱戦」の段階で進む（決着がつかなければ乱戦がつづく）。射撃戦では弓・鉄砲が撃ち合い、鉄砲の音と煙は敵の士気を下げる。鑓合わせでは長柄足軽が敵の足を止め、足を止めた敵には打撃（騎馬武者と旗本の突撃）が深く入る。</li>
     <li>士気が20以下になった軍勢は、くずれて敗走する。城を守る兵は士気が下がりにくく、城攻めでは攻める側の騎馬は馬を下りて戦い、城の弓・鉄砲は横矢をかける。政策「備を立てる」を行うと、打撃の力が上がり、士気もくずれにくくなる。</li>

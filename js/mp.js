@@ -75,7 +75,7 @@ function open(nick,selH,pace){M.nick=nick;M.house=null;M.resumeSave=null;
       <div class="mpcol"><b>部屋を作る</b>
         <label class="mpopt"><input type="radio" name="mpplay" value="1" checked> 自分も家を動かす</label>
         <label class="mpopt"><input type="radio" name="mpplay" value="0"> 見守るだけ（先生）</label>
-        <label class="mpopt">進め方 <select id="mppace">${['std','long','rt'].map(k=>`<option value="${k}" ${k===(pace||'std')?'selected':''}>${paceName(k)}</option>`).join('')}</select></label>
+        <label class="mpopt">進め方 <select id="mppace">${['std','long','rt'].filter(k=>k!=='rt'||(typeof SHOW_RT!=='undefined'&&SHOW_RT)).map(k=>`<option value="${k}" ${k===(pace||'std')?'selected':''}>${paceName(k)}</option>`).join('')}</select></label>
         <label class="mpopt">1ターンの時間 <select id="mpsec">${TIMES.map(([v,n])=>`<option value="${v}" ${v===def?'selected':''}>${n}</option>`).join('')}</select></label>
         <div class="mpsv"><label class="mpopt"><input type="radio" name="mpnew" value="new" checked> 新しく始める</label>
           ${ls?`<label class="mpopt"><input type="radio" name="mpnew" value="ls"> 続きから：${esc(saveTxt(ls))}</label>`:''}
