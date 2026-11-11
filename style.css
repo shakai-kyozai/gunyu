@@ -984,3 +984,14 @@ details.bt[open] .btmore{display:none}
 .mctl .cmp i{position:absolute;inset:0}
 .mapw:not(.v3) .mctl .rot{display:none}
 html[data-ui=xs] .mctl{gap:3px}html[data-ui=xs] .mctl .zb,html[data-ui=xs] .mctl .dp{width:32px;height:32px}
+/* 命令のボタン：編成は募兵の下（大将を替えるのとなり）に */
+.cmdc .abtn.a-org{grid-column:auto;flex-direction:column;gap:1px;min-height:58px}.cmdc .abtn.a-org small{margin-left:0}
+/* 募兵のポップアップ：兵の絵を全部見せる */
+.reccards{grid-template-columns:repeat(4,minmax(0,150px))!important}
+.reccards .ucard .upic{height:auto;aspect-ratio:1/1;background-size:100% auto!important;background-position:50% 0!important;box-shadow:none}
+.reccards .ucard .un{font-size:13px}.reccards .ucard .ucost{font-size:13px}
+/* 年のはじめの画面：「はじめる」がいつも見えるように */
+#dlgBox.evbox .evimg{height:clamp(110px,calc(90vh / var(--ui) - 470px),250px)}
+#dlgBox.evbox .evd{line-height:1.65;margin:4px 0}
+#dlgBox.evbox .steps{margin:6px 0}
+#dlgBox.evbox .evgo{position:sticky;bottom:-18px;margin:6px -18px -18px;padding:10px 18px 14px;background:linear-gradient(transparent,var(--paper) 30%);z-index:2}

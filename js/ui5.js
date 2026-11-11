@@ -1251,7 +1251,7 @@ function showEvent(){
    <h3 class="evt">${ev?ev.t:''}</h3><p class="evd">${ev?ev.d:''}</p>
    ${S.honno&&y===1582?`<p class="dn">${hn(S.honno.h)}の家臣がそむき、${A[S.honno.a].n}の軍勢を失った。</p>`:''}
    <div class="steps"><b>このターンにすること</b><ol><li>書状やとなりの人との話し合いで、同盟・不可侵・援軍の約束をする</li><li>兵を集め、政策を選ぶ</li><li>軍勢ごとに行き先を決める</li><li>「命令を確定してターンを終える」を押す</li></ol></div>
-   <div class="row"><button class="btn pri" type="button" onclick="closeDlg();startTurnTimer()">はじめる${turnSec()?`（命令の時間 ${Math.round(turnSec()/60*10)/10}分）`:''}</button></div>`);
+   <div class="row evgo"><button class="btn pri" type="button" onclick="closeDlg();startTurnTimer()">はじめる${turnSec()?`（命令の時間 ${Math.round(turnSec()/60*10)/10}分）`:''}</button></div>`,'evbox');
 }
 /* ---------- 終わり ---------- */
 function showEnd(){const eb=document.getElementById('endBtn');if(eb)eb.remove();

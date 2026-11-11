@@ -15,7 +15,7 @@ const Q_KEY='gunyu_q';
 const qPref=()=>{try{return localStorage.getItem(Q_KEY)==='lite'?'lite':'full';}catch(e){return 'full';}};
 let LITE=qPref()==='lite';
 // 駒と建物の三角形を、元の何割にへらすか（軽い／きれい）
-const SLIM={lite:{piece:0.4,prop:0.3,err:0.04},full:{piece:0.7,prop:0.6,err:0.02}};
+const SLIM={lite:{piece:0.4,prop:0.3,err:0.04},full:{piece:1,prop:0.6,err:0.02}};
 const slimCfg=()=>SLIM[LITE?'lite':'full'];
 const SEG_X=LITE?256:512;
 const PIECE_H=15;
@@ -77,7 +77,7 @@ async function init(){
   const controls=new MapControls(camera,canvas);
   controls.addEventListener('change',()=>{if(R)R.lastAct=performance.now();});
   for(const ev of ['pointerdown','pointermove','wheel'])canvas.addEventListener(ev,()=>{if(R)R.lastAct=performance.now();},{passive:true});
-  controls.enableDamping=true;controls.dampingFactor=0.12;controls.maxPolarAngle=1.22;controls.minDistance=70;controls.maxDistance=2600;
+  controls.enableDamping=true;controls.dampingFactor=0.12;controls.maxPolarAngle=1.22;controls.minDistance=32;controls.maxDistance=2600;
   controls.zoomSpeed=1.2;controls.screenSpacePanning=false;
   scene.add(new THREE.HemisphereLight(0xffffff,0x40506a,1.6));
   const sun=new THREE.DirectionalLight(0xfff2dc,2.1);sun.position.set(-500,800,450);scene.add(sun);
