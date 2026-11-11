@@ -20,4 +20,8 @@
     document.body.appendChild(s);
   }
   next(0);
+  // 読みこんだ版を、画面の左下に小さく出す（新しい版が届いているかを確かめるため）
+  const m=(B||'').match(/@([0-9a-z.\-]+)\//);const v=m?m[1]:'';
+  if(v){const t=document.createElement('div');t.id='verTag';t.textContent='版 '+(v.length===40?v.slice(0,7):v);
+    t.style.cssText='position:fixed;left:6px;bottom:4px;z-index:200;font:11px "BIZ UDPGothic",sans-serif;color:#c9b48a;opacity:.6;pointer-events:none';document.body.appendChild(t);}
 })();
