@@ -152,7 +152,7 @@ function areaTip(a){
         <div class="tcam">${esc(hn(x.h))}・統率${cmdOf(x).t}・${x.u.length}部隊${needsRefill(x)?'<span class="tcref">✚補充中</span>':''}</div>${compBar(n)}</div></div>`;}}
   const notes=[];
   if(main)notes.push(`<div class="tcnote gold">★ ${esc(ar.pv)}国の拠点の城：落とすと、同じ持ち主の${esc(ar.pv)}国の地域もいっしょに手に入る</div>`);
-  if(S.siege&&S.siege[a]){const sg=S.siege[a];notes.push(`<div class="tcnote red">🏯 籠城中：${esc(hn(sg.by))}が包囲している。あと<b>${sg.left}</b>ターンで兵糧が尽きて落城する。軍勢を送って包囲の軍勢を破れば、包囲はとける</div>`);}
+  if(S.siege&&S.siege[a]){const sg=S.siege[a];notes.push(`<div class="tcnote red">🏯 籠城中：${esc(hn(sg.by))}が包囲している。あと<b>${sgTxt(sg.left)}</b>で兵糧が尽きて落城する。軍勢を送って包囲の軍勢を破れば、包囲はとける</div>`);}
   else if(o&&holdTurns(a,o))notes.push(`<div class="tcnote">🏯 ${isHonjo(a,o)?'本拠':'国の拠点'}の城：攻めに負けても、すぐには落ちず、${holdTurns(a,o)}ターン籠城できる</div>`);
   if(zocOf(S.me).has(a))notes.push(`<div class="tcnote red">⚠ 敵の軍勢がいる地域（にらみの範囲）：ここに入った軍勢は、その先へ進めず、その敵の軍勢と戦いになる</div>`);
   if(rd.length||sea)h+=`<div class="tcroad">${TI.road}${rd.map(esc).join('・')}${sea?(rd.length?'・':'')+'海路あり':''}</div>`;
@@ -417,12 +417,12 @@ function drawOrders(){
 /* ---------- 操作 ---------- */
 // 家の操作（募兵・解散・政策など）は、すべて act を通す。みんなで遊ぶときは記録して、ターンの終わりに親の画面へ送る
 // みんなで遊ぶ：命令を送ったあとは変えられない（「命令をなおす」で取り消せる）
-function locked(){if(S&&S.mode==='multi'&&window.NET&&NET.isReady()){toast('命令を送ったあとは変えられない。「命令をなおす」を押すとなおせる',true,3200);return true;}return false;}
+function locked(){if(isRT())return false;if(S&&S.mode==='multi'&&window.NET&&NET.isReady()){toast('命令を送ったあとは変えられない。「命令をなおす」を押すとなおせる',true,3200);return true;}return false;}
 function act(k,args){if(locked())return false;const r=doAct(S.me,k,args);if(r&&S.mode==='multi'&&window.NET)NET.record(k,args);return r;}
 const myLog=()=>(S.log||[]).filter(l=>!l.h||l.h===S.me);
 // 「とどまる」を選んだ軍勢（このターンだけ覚える）
 function stays(){if(UI.stayT!==S.turn){UI.stayT=S.turn;UI.stay=new Set();}return UI.stay;}
-const unmoved=()=>armiesOf(S.me).filter(x=>!S.orders[x.id]&&!stays().has(x.id));
+const unmoved=()=>isRT()?[]:armiesOf(S.me).filter(x=>!S.orders[x.id]&&!stays().has(x.id));
 const myInbox=()=>(S.inbox||[]).map((m,i)=>({m,i})).filter(o=>!o.m.to||o.m.to===S.me);
 function clickArea(a,h,aid){
   if(UI.justDragged)return;
@@ -430,7 +430,7 @@ function clickArea(a,h,aid){
   if(S.ended||S.dead[S.me])return;
   if(UI.mode==='move'){
     const ar=S.armies.find(x=>x.id===UI.sel);
-    if(ar&&UI.reach[a]){if(locked()){UI.mode=null;UI.reach=null;refresh();return;}const path=UI.reach[a].path;UI.mode=null;UI.reach=null;guardOrder(ar,path,()=>{S.orders[ar.id]=path;refresh();});refresh();return;}
+    if(ar&&UI.reach[a]){if(locked()){UI.mode=null;UI.reach=null;refresh();return;}const path=UI.reach[a].path;UI.mode=null;UI.reach=null;guardOrder(ar,path,()=>{giveOrder(ar,path);refresh();});refresh();return;}
     UI.mode=null;UI.reach=null;refresh();return;
   }
   UI.area=a;UI.mode=null;UI.reach=null;UI.tab=null;
@@ -449,11 +449,13 @@ function rightClickArea(a){if(UI.lobbyPick)return;
   const ar=S.armies.find(x=>x.id===UI.sel&&x.h===S.me);
   if(!ar){toast('先に自分の軍勢をクリックして選んでから、行き先を右クリックする');return;}
   if(locked())return;
-  if(a===ar.a){delete S.orders[ar.id];UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は${A[a].n}にとどまる`);return;}
+  if(a===ar.a){giveOrder(ar,null);UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は${A[a].n}にとどまる`);return;}
   const r=reach(ar);
-  if(!r[a]){toast(`${A[a].n}へは、このターンには行けない（遠すぎるか、敵の地域や敵の「にらみの範囲」で止まるため。にらみの範囲に入ると、その敵と戦いになる）`,true);return;}
+  if(!r[a]){toast(`${A[a].n}へは、${isRT()?'':'このターンには'}行けない（遠すぎるか、敵の地域や敵の「にらみの範囲」で止まるため。にらみの範囲に入ると、その敵と戦いになる）`,true);return;}
   const path=r[a].path;UI.mode=null;UI.reach=null;UI.sub=null;refresh();
-  guardOrder(ar,path,()=>{S.orders[ar.id]=path;refresh();orderToast(ar,a);});}
+  guardOrder(ar,path,()=>{giveOrder(ar,path);refresh();orderToast(ar,a);});}
+// 命令を出す（リアルタイムでは、行き先を決めるとすぐに進みはじめる）
+function giveOrder(ar,path){if(isRT()){if(path)act('go',{ar:ar.id,path});else act('halt',{ar:ar.id});return;}if(path)S.orders[ar.id]=path;else delete S.orders[ar.id];}
 function orderToast(ar,a){
   const o=S.own[a];const z=zocOf(S.me);
   toast(`${cmdOf(ar).n}の軍勢：${A[a].n}へ${o&&o!==S.me&&!allied(S.me,o)||!o?'攻める':'進む'}${z.has(ar.a)?'（ただし今は敵のにらみの範囲の中。動く前に戦いになる）':z.has(a)?'（敵のにらみの範囲なので、着いたらその敵と戦う）':''}`,z.has(ar.a)||z.has(a),3200);
@@ -476,7 +478,7 @@ function warnYes(){const go=UI.warnGo;const h=UI.warnH;if(h&&rel(S.me,h)==='none
 function toast(t,bad,ms){let d=document.getElementById('toast');if(!d){d=document.createElement('div');d.id='toast';document.body.appendChild(d);}
   d.textContent=t;d.className=bad?'bad on':'on';clearTimeout(d._t);d._t=setTimeout(()=>d.className=bad?'bad':'',ms||2200);}
 function startMove(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);UI.mode='move';UI.sub=null;UI.reach=reach(ar);refresh();}
-function stay(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);if(!ar)return;delete S.orders[UI.sel];stays().add(UI.sel);UI.sub=null;UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は、${A[ar.a].n}にとどまる（命令ずみ）`);}
+function stay(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);if(!ar)return;if(isRT()){giveOrder(ar,null);UI.sub=null;UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は、${A[ar.a].n}で止まる`);return;}delete S.orders[UI.sel];stays().add(UI.sel);UI.sub=null;UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は、${A[ar.a].n}にとどまる（命令ずみ）`);}
 function doRecruit(t){const ar=S.armies.find(x=>x.id===UI.sel);if(ar)act('recruit',{ar:ar.id,t});refresh();}
 function doDisband(){const ar=S.armies.find(x=>x.id===UI.sel);if(!ar||!UI.cards.size)return;act('disband',{ar:ar.id,ids:[...UI.cards]});UI.cards=new Set();if(!S.armies.includes(ar)){UI.sel=null;delete S.orders[ar.id];}refresh();}
 function splitArmy(){const ar=S.armies.find(x=>x.id===UI.sel);const fb=freeBusho(S.me);if(!fb.length){alertMsg('軍勢を分けるには、軍勢を率いていない武将が必要。');return;}
@@ -515,8 +517,8 @@ function changeCmd(bi){const ar=S.armies.find(x=>x.id===UI.sel);if(ar)act('cmd',
 function refresh(){drawMap();renderPanel();renderTicker();renderDock();modeUI();endBtnUI();if(S&&S.mode==='multi'&&window.NET)NET.save();}
 /* ---------- 1ターンの制限時間 ---------- */
 const TT={end:0,id:0,warned:false};
-const turnSec=()=>S&&S.turnSec!=null?S.turnSec:TURN_SEC;
-function startTurnTimer(){stopTurnTimer();if(!turnSec()||!S||S.ended||S.dead[S.me])return;if(S.mode==='multi'&&window.NET&&NET.isReady())return;TT.end=performance.now()+(S.mode==='multi'&&window.NET?NET.leftSec():turnSec())*1000;TT.warned=false;TT.id=setInterval(tickTurnTimer,250);tickTurnTimer();}
+const turnSec=()=>isRT()?0:S&&S.turnSec!=null?S.turnSec:TURN_SEC;
+function startTurnTimer(){stopTurnTimer();if(isRT()){rtStart();return;}if(!turnSec()||!S||S.ended||S.dead[S.me])return;if(S.mode==='multi'&&window.NET&&NET.isReady())return;TT.end=performance.now()+(S.mode==='multi'&&window.NET?NET.leftSec():turnSec())*1000;TT.warned=false;TT.id=setInterval(tickTurnTimer,250);tickTurnTimer();}
 function stopTurnTimer(){if(TT.id)clearInterval(TT.id);TT.id=0;TT.end=0;const t=$('#eTimer');if(t)t.style.display='none';}
 function tickTurnTimer(){if(!TT.end)return;const left=Math.max(0,(TT.end-performance.now())/1000);const t=$('#eTimer');
   if(t){t.style.display='';const m=Math.floor(left/60),sec=Math.floor(left%60);t.querySelector('b').textContent=`${m}:${String(sec).padStart(2,'0')}`;
@@ -530,6 +532,7 @@ function endBtnUI(){
   if(!show){if(b)b.remove();return;}
   if(!b){b=document.createElement('div');b.id='endBtn';}
   if(b.parentNode!==mw)mw.appendChild(b);
+  if(isRT()){rtClock(b);return;}
   const mine=armiesOf(S.me);const left=unmoved();
   const next=left[0];
   b.innerHTML=`<div class="ebox"><div class="ehd"><span class="eyr">${wareki(yearNow())}</span><span class="etn">ターン ${S.turn+1}／${YEARS.length}</span></div>
@@ -592,6 +595,10 @@ function orgDlg(){const ar=S.armies.find(x=>x.id===UI.sel);if(!ar)return;const m
    </div><div class="row"><button class="btn" type="button" onclick="UI.cards=new Set();closeDlg();renderDock()">やめる</button></div>`,'popsel',true);}
 function nextStep(ar){
   const o=S.orders[ar.id];
+  if(isRT()){
+    if(UI.mode==='move')return {t:'地図の光っている地域をクリックして、行き先を決める',d:'決めるとすぐに進みはじめる。主な街道は1か月、山道・海路は2か月かかる。敵の地域に着くと、戦いになる。'};
+    if(o)return {t:`${A[o[o.length-1]].n}へ進んでいる`,d:`通る道：${o.map(x=>A[x].n).join('→')}。行き先は、いつでも変えられる。`,done:true};
+    return {t:'待っている（この場所を守る）',d:S.own[ar.a]===ar.h?'行き先を決めると進みはじめる。部隊が足りないときは「募兵」で兵を加える。':'行き先を決めると進みはじめる。ここは自分の領内ではないので、募兵や補充はできない。'};}
   if(UI.mode==='move')return {t:'地図の光っている地域をクリックして、行き先を決める',d:`主な街道は1、山道・海路は2を使い、1ターンに${MP}まで進める。敵の地域に入ると、そこで戦いになる。`};
   if(!o&&stays().has(ar.id))return {t:`命令ずみ：${A[ar.a].n}にとどまる`,d:'この場所を守る。となりの自分の城が攻められたときは、助けに入る。行き先を決めなおすときは「移動・攻める」を押す。',done:true};
   if(o)return {t:`命令ずみ：${A[o[o.length-1]].n}へ進む`,d:`通る道：${o.map(x=>A[x].n).join('→')}。ほかの軍勢にも命令を出すか、「命令を確定してターンを終える」を押す。`,done:true};
@@ -611,7 +618,7 @@ function actionMenu(ar,mine){
   let s=`<div class="next ${ns.done?'done':''} ${UI.mode==='move'?'mv':''}"><b>${ns.t}</b><div>${ns.d}</div>${UI.mode==='move'?'<button type="button" class="btn small" onclick="cancelMove()">やめる</button>':''}</div>
   <div class="amenu">
    ${B('move','⚔',UI.mode==='move'?'行き先を選んでいる…':'移動・攻める','地図で行き先を選ぶ',UI.mode==='move')}
-   ${B('stay','⛺',st?'とどまる ✓':'とどまる',o?'進む命令を取り消す':st?'命令ずみ':'この場所を守る',st)}
+   ${isRT()?B('stay','⛺','止まる',o?'進むのをやめる':'この場所を守っている',false,!o,'いまは進んでいない'):B('stay','⛺',st?'とどまる ✓':'とどまる',o?'進む命令を取り消す':st?'命令ずみ':'この場所を守る',st)}
    ${B('rec','✚','募兵','兵の部隊を加える',UI.sub==='rec',!own,'自分の領内でのみ')}
    ${B('cmd','⚑','大将を替える','あいている武将 '+freeBusho(S.me).length+'人',UI.sub==='cmd',!freeBusho(S.me).length,'あいている武将がいない')}
    ${B('org','✂','編成','分ける・合わせる・解散',UI.sub==='org')}
@@ -643,7 +650,7 @@ function renderPanel(){
     </div>`;
   }
   const hcmp=!!(UI.sel&&S.armies.some(x=>x.id===UI.sel&&x.h===me))&&!UI.tab;
-  const head=`<div class="card${hcmp?' hcmp':''}"><div class="hh">${faceUrl(me)?`<span class="pface" style="--hc:${h.col}"><img src="${faceUrl(me)}" alt=""><i>${kamonHTML(me)}</i></span>`:`<span class="dot big" style="background:${h.col}">${kamonHTML(me)}</span>`}<div><b>${h.n}家</b>${S.landless&&S.landless[me]?'<span class="hkas land">領地なし（軍勢だけ）</span>':''}${playerOf(me)?`<span class="who hu">${HU_SVG}${esc(playerOf(me))}</span>`:''}${S.lord&&S.lord[me]?`<span class="hkas">${esc(H[S.lord[me]].n)}家の家臣</span>`:Object.keys(S.lord||{}).some(v=>S.lord[v]===me&&alive(v))?`<span class="hkas lord">家臣 ${Object.keys(S.lord).filter(v=>S.lord[v]===me&&alive(v)).length}家</span>`:''}<div class="hint">${wareki(yearNow())}（${yearNow()}年）　ターン${S.turn+1}／${YEARS.length}</div>${(()=>{const L=[];for(const k in (S.wabo||{}))if(S.wabo[k]===me)L.push(`<span class="jrst">停戦命令中：${esc(H[k].n)}家（このターン）</span>`);for(const k in (S.siege||{}))if(S.own[k]===me)L.push(`<span class="jrst sg">籠城中：${esc(A[k].n)}（あと${S.siege[k].left}ターン）</span>`);for(const k in (S.waboNext||{}))if(S.waboNext[k]===me)L.push(`<span class="jrst">停戦命令：${esc(H[k].n)}家（次のターン）</span>`);return L.join('');})()}</div></div>
+  const head=`<div class="card${hcmp?' hcmp':''}"><div class="hh">${faceUrl(me)?`<span class="pface" style="--hc:${h.col}"><img src="${faceUrl(me)}" alt=""><i>${kamonHTML(me)}</i></span>`:`<span class="dot big" style="background:${h.col}">${kamonHTML(me)}</span>`}<div><b>${h.n}家</b>${S.landless&&S.landless[me]?'<span class="hkas land">領地なし（軍勢だけ）</span>':''}${playerOf(me)?`<span class="who hu">${HU_SVG}${esc(playerOf(me))}</span>`:''}${S.lord&&S.lord[me]?`<span class="hkas">${esc(H[S.lord[me]].n)}家の家臣</span>`:Object.keys(S.lord||{}).some(v=>S.lord[v]===me&&alive(v))?`<span class="hkas lord">家臣 ${Object.keys(S.lord).filter(v=>S.lord[v]===me&&alive(v)).length}家</span>`:''}<div class="hint">${wareki(yearNow())}（${yearNow()}年）　${isRT()?`${(S.rt&&S.rt.m||0)+1}月`:`ターン${S.turn+1}／${YEARS.length}`}</div>${(()=>{const L=[];for(const k in (S.wabo||{}))if(S.wabo[k]===me)L.push(`<span class="jrst">停戦命令中：${esc(H[k].n)}家（このターン）</span>`);for(const k in (S.siege||{}))if(S.own[k]===me)L.push(`<span class="jrst sg">籠城中：${esc(A[k].n)}（あと${sgTxt(S.siege[k].left)}）</span>`);for(const k in (S.waboNext||{}))if(S.waboNext[k]===me)L.push(`<span class="jrst">停戦命令：${esc(H[k].n)}家（次のターン）</span>`);return L.join('');})()}</div></div>
    <div class="stat"><span>石高 <b>${kokuOf(me)}</b>万石</span><span>地域 <b>${areasOf(me).length}</b></span><span>金 <b>${S.gold[me]}</b>（収入+${income(me)}・維持-${upkeep(me)}${nenguOut(me)?`・年貢-${nenguOut(me)}`:''}${nenguIn(me)?`・年貢+${nenguIn(me)}`:''}）</span></div>
    <div class="stat"><span>兵 <b class="${tr>cap&&cap?'dn':''}">${(tr*100).toLocaleString()}人</b>${cap?`／上限 ${(cap*100).toLocaleString()}人`:'（領地がないので補充・募兵はできない）'}</span>${tr>cap&&cap?`<span class="dn">上限をこえている：戦いの力 -${Math.round((1-of)*100)}%</span>`:''}</div>
    <div class="goal ${goalN>=h.need?'done':''}">家の目標：${h.gt}<br><span class="hint">（${h.goal.map(x=>A[x].n+(S.own[x]===me?'✓':'')).join('・')} のうち${h.need}つ）</span></div></div>`;
@@ -714,7 +721,7 @@ function renderDock(){const d=$('#dock');if(!d||!S)return;const me=S.me;
   if(S.dead[me]){d.innerHTML='<div class="dkempty">あなたの家は滅んだ。</div>';return;}
   const ars=armiesOf(me).slice().sort((p,q)=>A[p.a].n.localeCompare(A[q.a].n,'ja')||p.id-q.id);
   const sel=ars.find(x=>x.id===UI.sel)||null;
-  const st=ar=>{const o=S.orders[ar.id];return o?`<span class="dko go">→ ${esc(A[o[o.length-1]].n)}</span>`:stays().has(ar.id)?'<span class="dko st">とどまる</span>':'<span class="dko no">命令なし</span>';};
+  const st=ar=>{const o=S.orders[ar.id];return o?`<span class="dko go">→ ${esc(A[o[o.length-1]].n)}</span>`:stays().has(ar.id)?'<span class="dko st">とどまる</span>':isRT()?'<span class="dko st">待っている</span>':'<span class="dko no">命令なし</span>';};
   const tab=ar=>`<button type="button" class="dktab ${ar===sel?'on':''} ${sel&&ar!==sel&&ar.a===sel.a?'same':''}" data-ar="${ar.id}" data-a="${ar.a}" style="--hc:${H[ar.h].col}" onclick="dockSel(${ar.id})">
     ${genIcon(ar)}<span class="dkt"><b>${esc(cmdOf(ar).n)}</b><small>${esc(A[ar.a].n)}・${men(nOf(ar))}・${ar.u.length}部隊${needsRefill(ar)?' <i class="refl">✚</i>':''}</small>${st(ar)}</span></button>`;
   const split=sel&&freeBusho(me).length&&sel.u.length>1?`<div class="dktab split" data-split="${sel.id}" title="ここへ部隊を動かすと、新しい軍勢に分ける"><b>＋</b><span class="dkt"><b>新しい軍勢へ分ける</b><small>部隊をここへ動かす</small></span></div>`:'';
@@ -850,11 +857,12 @@ const BV={speed:1,skip:false,run:0,retreatReq:false};
 const BT={gen:null};
 function doResolve(){stopTurnTimer();
   UI.sel=null;UI.mode=null;UI.reach=null;
-  BT.gen=endTurnG();stepTurn();
+  BT.after=null;BT.gen=endTurnG();stepTurn();
 }
 function stepTurn(input){let r;
-  try{r=BT.gen.next(input);}catch(e){console.error(e);BT.gen=null;afterResolve();return;}
-  if(r.done){BT.gen=null;afterResolve();return;}
+  const fin=()=>{BT.gen=null;const f=BT.after||afterResolve;BT.after=null;f();};
+  try{r=BT.gen.next(input);}catch(e){console.error(e);fin();return;}
+  if(r.done){fin();return;}
   const ev=r.value;
   if(ev.k==='start')LB.open(ev,false,ch=>stepTurn(ch));
   else if(ev.k==='round')LB.round(ev,c=>stepTurn(c));
@@ -1247,12 +1255,51 @@ function showEvent(){
   if(S.turn===0&&!UI.howSeen&&!S.ended){refresh();howDlg(showEvent);return;}
   const y=yearNow();const ev=EVENTS[y];refresh();
   openDlg(`<div class="evx">${SCENE_IMG[y]?`<div class="evimg" style="background-image:url(${SCENE_IMG[y]})"></div>`:'<div class="evimg none"></div>'}
-   <div class="evyr"><div class="yr">${wareki(y)}</div><div class="yrw">西暦${y}年　ターン${S.turn+1}／${YEARS.length}</div></div></div>
+   <div class="evyr"><div class="yr">${wareki(y)}</div><div class="yrw">西暦${y}年${isRT()?'':`　ターン${S.turn+1}／${YEARS.length}`}</div></div></div>
    <h3 class="evt">${ev?ev.t:''}</h3><p class="evd">${ev?ev.d:''}</p>
    ${S.honno&&y===1582?`<p class="dn">${hn(S.honno.h)}の家臣がそむき、${A[S.honno.a].n}の軍勢を失った。</p>`:''}
-   <div class="steps"><b>このターンにすること</b><ol><li>書状やとなりの人との話し合いで、同盟・不可侵・援軍の約束をする</li><li>兵を集め、政策を選ぶ</li><li>軍勢ごとに行き先を決める</li><li>「命令を確定してターンを終える」を押す</li></ol></div>
+   ${isRT()?`<div class="steps"><b>リアルタイム：時間は止まらずに流れる</b><ol><li>軍勢の行き先を決めると、すぐに進みはじめる（いつでも変えられる）</li><li>金は月ごとに入る。たまったら兵を集め、政策を選ぶ</li><li>書状は、いつでも送れる</li><li>${S.mode==='multi'?'時計は、部屋を作った人が止めたり進めたりする':'右下の時計で、止める・速さを変える'}</li></ol></div>`:`<div class="steps"><b>このターンにすること</b><ol><li>書状やとなりの人との話し合いで、同盟・不可侵・援軍の約束をする</li><li>兵を集め、政策を選ぶ</li><li>軍勢ごとに行き先を決める</li><li>「命令を確定してターンを終える」を押す</li></ol></div>`}
    <div class="row evgo"><button class="btn pri" type="button" onclick="closeDlg();startTurnTimer()">はじめる${turnSec()?`（命令の時間 ${Math.round(turnSec()/60*10)/10}分）`:''}</button></div>`,'evbox');
 }
+/* ---------- リアルタイム：時計と進行 ----------
+   ひとりのときは、この画面が月ごとにエンジン（rtTickG）を進める。みんなで遊ぶときは、部屋を作った人の画面が進め、ここは時計を見せるだけ */
+const RTC={id:0,acc:0,last:0};
+const RT_SEC={slow:5,std:3,fast:1.5};
+const rtMulti=()=>S&&S.mode==='multi'&&window.NET;
+const rtSec=()=>rtMulti()?(S.rt&&S.rt.sec||5):RT_SEC[S.rt&&S.rt.spd||'std'];
+const rtFrac=()=>!S||!S.rt?0:rtMulti()?NET.rtFrac():Math.min(1,RTC.acc/rtSec());
+const rtCanCtl=()=>!rtMulti()||NET.isHost();
+// 地図の上で、軍勢を道のとちゅうに描くための情報（view3d が毎こま読む）
+window.rtMove=ar=>{if(!isRT())return null;const p=S.orders[ar.id];if(!p||!p.length)return null;const e=EDGE[ar.a]&&EDGE[ar.a][p[0]];if(!e)return null;
+  const base=ar.mv&&ar.mv.to===p[0]?ar.mv.p:0;return {to:p[0],f:Math.max(0,Math.min(1,(base+rtFrac()*RT.SPEED)/e.c))};};
+function rtStart(){if(RTC.id)return;RTC.last=performance.now();RTC.id=setInterval(rtLoop,100);}
+function rtBusy(){const d=$('#dlg');return !!BT.gen||!!(d&&d.classList.contains('on'))||!!document.querySelector('.bvwrap,.bv');}
+function rtLoop(){const now=performance.now();const dt=Math.min(1,(now-RTC.last)/1000);RTC.last=now;
+  if(!S||!isRT()||!$('#map')){clearInterval(RTC.id);RTC.id=0;return;}
+  if(!rtMulti()&&!S.ended&&!S.rt.paused&&!rtBusy()){RTC.acc+=dt;if(RTC.acc>=rtSec()){RTC.acc=0;rtRun();}}
+  const bar=$('#rtBar');if(bar)bar.style.width=(rtFrac()*100).toFixed(1)+'%';}
+function rtRun(){if(UI.rtAuto)S._live=()=>false;BT.after=rtAfter;BT.gen=rtTickG();stepTurn();}
+// 1か月が進んだあと：知らせを出し、画面を描き直す（選んでいる軍勢や、行き先えらびはそのまま）
+function rtAfter(){delete S._live;if(!rtMulti())save();rtNotes();
+  const ar=S.armies.find(x=>x.id===UI.sel&&x.h===S.me);if(!ar){if(UI.sel)UI.sel=null;UI.mode=null;UI.reach=null;}else if(UI.mode==='move')UI.reach=reach(ar);
+  refresh();
+  if(S.ended){showEnd();return;}
+  if(S.rt.newYear&&!S.dead[S.me]){S.rt.newYear=false;const y=yearNow();if(typeof SFX!=='undefined')SFX.play('se_turn_end');if(EVENTS[y]&&!rtMulti())showEvent();else rtNote(`${wareki(y)}（${y}年）になった${EVENTS[y]?'：'+EVENTS[y].t:''}`);}}
+function rtNotes(){for(const e of (S.events||[]))if(!e.h||e.h===S.me)rtNote(e.t,true);
+  for(const b of myBattlesOf(S.lastBattles)){const att=b.attHs.includes(S.me);const won=(att&&b.r.win==='att')||(!att&&b.r.win==='def');rtNote(`${b.name}：${won?'勝ち':'負け'}`,!won);}
+  for(const c of (S.changes||[])){if(c.to===S.me&&!c.follow)rtNote(`${A[c.a].n}（${A[c.a].pv}）を手に入れた`);else if(c.from===S.me)rtNote(`${A[c.a].n}（${A[c.a].pv}）を${hn(c.to)}に奪われた`,true);}}
+// 知らせの札（画面の上にならべ、しばらくすると消える）
+function rtNote(t,bad){let box=$('#rtnotes');const mw=document.querySelector('.mapw');if(!mw)return;if(!box){box=document.createElement('div');box.id='rtnotes';}if(box.parentNode!==mw)mw.appendChild(box);
+  const d=document.createElement('div');d.className='rtn'+(bad?' bad':'');d.textContent=t;box.appendChild(d);while(box.children.length>5)box.firstChild.remove();setTimeout(()=>d.remove(),9000);}
+function rtClock(b){const rt=S.rt||{};const ctl=rtCanCtl();
+  b.innerHTML=`<div class="ebox rtbox"><div class="ehd"><span class="eyr">${wareki(yearNow())}</span><span class="etn">${yearNow()}年 <b class="rtm">${(rt.m||0)+1}月</b></span></div>
+    <div class="rtbar"><i id="rtBar" style="width:${(rtFrac()*100).toFixed(1)}%"></i></div>
+    <div class="est">${rt.paused?'<span class="ewarn">時間は止まっている</span>':'<span class="eok">時間が流れている</span>'}${rtMulti()&&!ctl?'<span class="hint">　時計は部屋を作った人が動かす</span>':''}</div>
+    ${ctl?`<div class="rtctl"><button type="button" class="rtb ${rt.paused?'go':''}" onclick="rtPause()">${rt.paused?'▶ 進める':'❚❚ 止める'}</button>${rtMulti()?[[8,'おそい'],[5,'ふつう'],[3,'はやい']].map(([v,n])=>`<button type="button" class="rtb ${(rt.sec||5)===v?'on':''}" onclick="NET.rtCtl({sec:${v}})">${n}</button>`).join(''):Object.keys(RT_SEC).map(k=>`<button type="button" class="rtb ${(rt.spd||'std')===k?'on':''}" onclick="rtSpeed('${k}')">${{slow:'おそい',std:'ふつう',fast:'はやい'}[k]}</button>`).join('')}</div>`:''}
+    ${rtMulti()?'':`<label class="rtauto"><input type="checkbox" ${UI.rtAuto?'checked':''} onchange="UI.rtAuto=this.checked"> 合戦は自動で行う（画面を止めない）</label>`}</div>`;}
+function rtPause(){if(rtMulti()){NET.rtCtl({paused:!S.rt.paused});return;}S.rt.paused=!S.rt.paused;endBtnUI();}
+function rtSpeed(k){S.rt.spd=k;endBtnUI();}
+document.addEventListener('keydown',e=>{if(e.code!=='Space'||!S||!isRT()||!rtCanCtl()||!$('#map'))return;const t=e.target;if(t&&/INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName))return;const d=$('#dlg');if(d&&d.classList.contains('on'))return;e.preventDefault();rtPause();});
 /* ---------- 終わり ---------- */
 function showEnd(){const eb=document.getElementById('endBtn');if(eb)eb.remove();
   const me=S.me;
@@ -1263,14 +1310,14 @@ function showEnd(){const eb=document.getElementById('endBtn');if(eb)eb.remove();
   const W=520,Hh=210,maxY=Math.max(20,...top.flatMap(h=>S.hist[h]));
   const xs=i=>34+i*(W-60)/YEARS.length,ys=v=>Hh-20-v*(Hh-40)/maxY;
   let g=`<svg viewBox="0 0 ${W} ${Hh}" class="chart"><line x1="34" y1="${Hh-20}" x2="${W-10}" y2="${Hh-20}" stroke="currentColor" stroke-opacity=".3"/>`;
-  YEARS.concat([END_YEAR]).forEach((y,i)=>{g+=`<text x="${xs(i)}" y="${Hh-5}" font-size="10" text-anchor="middle" fill="currentColor">${y}</text>`;});
+  YEARS.concat([endYear()]).forEach((y,i)=>{g+=`<text x="${xs(i)}" y="${Hh-5}" font-size="10" text-anchor="middle" fill="currentColor">${y}</text>`;});
   g+=`<text x="4" y="14" font-size="10" fill="currentColor">万石</text>`;
   for(const h of top){const pts=S.hist[h].map((v,i)=>`${xs(i)},${ys(v)}`).join(' ');g+=`<polyline points="${pts}" fill="none" stroke="${H[h].col}" stroke-width="${h===me?4:2}"/><text x="${xs(S.hist[h].length-1)+4}" y="${ys(S.hist[h].slice(-1)[0])}" font-size="11" fill="${H[h].col}">${H[h].n}</text>`;}
   g+='</svg>';
   const prom=S.promises.filter(p=>p.a===me||p.b===me);const lets=S.letters.filter(l=>l.ok&&(l.type==='domei'||l.type==='fusen'));
   $('#app').innerHTML=`<div class="result">${SCENE_IMG.end?`<div class="rimg" style="background-image:url(${SCENE_IMG.end})"></div>`:''}<div class="hint">わが家の盛衰</div>
    <h2>${H[me].n}家　${S.unifier?(S.unifier===me?'天下統一を果たす':sameCamp(me,S.unifier)?`主君の${H[S.unifier].n}家が天下を統一した（家臣として天下統一を助ける）`:`${H[S.unifier].n}家が天下を統一した`):S.dead[me]?`${S.dead[me]}年に滅ぶ`:`${END_YEAR}年まで生き残る`}</h2>
-   <p>最後の石高：<b>${kokuOf(me)}万石</b>（はじめ ${S.start[me]}・最も多かったのは${YEARS[maxT]||END_YEAR}年の${maxK}）　｜　家の目標：<b>${goalDone(me)?'達成':'未達成'}</b>（${H[me].gt}）　｜　順位：<b>${myRank}位</b>／${ranks.length}家</p>
+   <p>最後の石高：<b>${kokuOf(me)}万石</b>（はじめ ${S.start[me]}・最も多かったのは${YEARS[maxT]||endYear()}年の${maxK}）　｜　家の目標：<b>${goalDone(me)?'達成':'未達成'}</b>（${H[me].gt}）　｜　順位：<b>${myRank}位</b>／${ranks.length}家</p>
    <div class="cols"><div><h3>石高の移り変わり</h3>${g}</div><div><h3>約束と裏切りの記録</h3><ul class="small">${lets.map(l=>`<li>${l.y}年　${hn(l.from)}→${hn(l.to)}：${esc(l.text)}（${esc(l.reply)}）</li>`).join('')}${prom.map(p=>`<li class="dn">${p.y}年　${esc(p.t)}</li>`).join('')}${!lets.length&&!prom.length?'<li>記録はない</li>':''}</ul></div></div>
    <h3>わが家の合戦</h3><div class="rank">${(S.myBattles||[]).filter(b=>!b.h||b.h===me).map(b=>`<span class="${b.won?'up':'dn'}">${b.y}年 ${b.name}（${b.pv}）${b.won?'勝ち':'負け'}・相手 ${b.vs}</span>`).join('')||'合戦はなかった'}</div>
    <h3>わが家の歩みと、実際の歴史</h3><div class="tl"><div class="h">わが家の歩み</div><div class="h">${H[me].n}家の実際の歴史</div><div>${myLog().map(l=>`${l.y}年　${esc(l.t)}`).join('<br>')||'―'}</div><div>${H[me].hist}</div></div>
@@ -1291,10 +1338,12 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
    <p>あなたは戦国大名の当主である。兵を集め、街道を通って軍勢を進め、城を取って領地を広げよう。となりの家と同盟を結び、ときには裏切りながら、天下統一をめざす。</p>
    <div class="hpick"><button type="button" id="hprev" title="クリックして家を選ぶ"></button></div>
    <div class="tnick"><label>ニックネーム <input type="text" id="nick" maxlength="12" placeholder="例：たろう" autocomplete="off"></label><span class="hint">外交の画面で、だれが動かしている家かがわかるように出る</span></div>
+   <div class="tpace"><span class="tpl">進め方</span>${[['std',`ふつう`,`1ターン2年・${YEARS_BASE.length}ターン`],['long','ロング',`1ターン1年・${yearsFor('long').length}ターン`],['rt','リアルタイム','時間が流れつづける']].map(([k,n,d],i)=>`<label class="tpo"><input type="radio" name="pace" value="${k}" ${i?'':'checked'}><b>${n}</b><small>${d}</small></label>`).join('')}</div>
    <div class="tmode"><button class="btn pri tmb" type="button" id="go"><b>一人で遊ぶ</b><small>ほかの家はコンピューターが動かす</small></button><button class="btn tmb" type="button" id="goMulti"><b>みんなで遊ぶ</b><small>クラスのみんなが家を1つずつ動かす</small></button></div>
-   <div class="row">${sv&&sv.S&&!sv.S.ended?`<button class="btn" type="button" id="cont">つづきから（${YEARS[sv.S.turn]}年・${H[sv.S.me].n}家）</button>`:''}</div>
+   <div class="row">${sv&&sv.S&&!sv.S.ended?`<button class="btn" type="button" id="cont">つづきから（${yearsFor(sv.S.pace)[sv.S.turn]}年・${H[sv.S.me].n}家${sv.S.pace==='rt'?'・リアルタイム':sv.S.pace==='long'?'・ロング':''}）</button>`:''}</div>
    <details><summary>ルールのまとめ</summary><ul>
-    <li>1ターンは2年。1560年から1588年までの15ターンで終わる。1ターンに命令を出せる時間は2分。時間になると、命令を出していない軍勢はその場にとどまる。</li>
+    <li>進め方は3つ。「ふつう」は1ターン2年で${YEARS_BASE.length}ターン、「ロング」は1ターン1年で${yearsFor('long').length}ターン。1ターンに命令を出せる時間は2分で、時間になると、命令を出していない軍勢はその場にとどまる。</li>
+    <li>「リアルタイム」はターンがなく、時間が流れつづける。行き先を決めた軍勢はすぐに進みはじめ、主な街道は1か月、山道・海路は2か月で次の地域に着く。金は月ごとに入る。時計は止めたり、速さを変えたりできる。</li>
     <li>兵は4種類：歩（足軽）・騎（騎馬）・弓・鉄（鉄砲）。歩は騎に強く、騎は弓・鉄に強く、弓・鉄は歩に強い。</li>
     <li>戦いは「射撃戦→鑓合わせ→打撃→乱戦」の段階で進む（決着がつかなければ乱戦がつづく）。射撃戦では弓・鉄砲が撃ち合い、鉄砲の音と煙は敵の士気を下げる。鑓合わせでは長柄足軽が敵の足を止め、足を止めた敵には打撃（騎馬武者と旗本の突撃）が深く入る。</li>
     <li>士気が20以下になった軍勢は、くずれて敗走する。城を守る兵は士気が下がりにくく、城攻めでは攻める側の騎馬は馬を下りて戦い、城の弓・鉄砲は横矢をかける。政策「備を立てる」を行うと、打撃の力が上がり、士気もくずれにくくなる。</li>
@@ -1318,16 +1367,17 @@ function titleScreen(){const eb=document.getElementById('endBtn');if(eb)eb.remov
   const pick=()=>{openDlg(`<h3>家を選ぶ</h3><p class="hint">☆はおすすめの家。クリックすると、その家に決まる。</p><div class="hgrid">${HOUSE_DEF.map(d=>{const k=d[0],hm=A[d[3][0]];
       return `<button type="button" class="hgc ${k===selH?'on':''}" data-k="${k}" style="--hc:${H[k].col}">${faceH(k,'hgf')}<span class="hgk">${kamonHTML(k)}</span><b>${d[4]?'<i class="hgs">☆</i>':''}${esc(d[1])}家</b><small>${esc(hm.n)}（${esc(hm.pv)}）</small></button>`;}).join('')}</div>`,'hpbox',true);
     document.querySelectorAll('.hgc').forEach(b=>b.onclick=()=>{selH=b.dataset.k;closeDlg();prev();});};
+  const paceSel=()=>{const r=document.querySelector('input[name=pace]:checked');return r?r.value:'std';};
   $('#hprev').onclick=pick;prev();
   const nk=$('#nick');try{nk.value=localStorage.getItem('gunyu_nick')||'';}catch(e){}
   const getNick=()=>{const v=(nk.value||'').trim();if(!v){nk.classList.add('need');nk.focus();toast('ニックネームを入れてください',true);return null;}try{localStorage.setItem('gunyu_nick',v);}catch(e){}return v;};
   nk.oninput=()=>nk.classList.remove('need');
-  $('#go').onclick=()=>{const n=getNick();if(!n)return;newGame(selH);S.mode='solo';S.players={[selH]:n};startUI();showEvent();};
+  $('#go').onclick=()=>{const n=getNick();if(!n)return;newGame(selH,paceSel());S.mode='solo';S.players={[selH]:n};startUI();showEvent();};
   $('#goMulti').onclick=async()=>{const n=getNick();if(!n)return;const g=$('#goMulti');g.disabled=true;
-    try{if(!window.NET)await import(new URL('js/mp.js',document.baseURI).href);NET.open(n,selH);}
+    try{if(!window.NET)await import(new URL('js/mp.js',document.baseURI).href);NET.open(n,selH,paceSel());}
     catch(e){console.warn(e);alertMsg('通信の準備ができなかった。ネットワークを確かめて、ページを読みこみ直してください。');}
     g.disabled=false;};
-  if($('#cont'))$('#cont').onclick=()=>{S=sv.S;uid=sv.uid;startUI();refresh();startTurnTimer();};
+  if($('#cont'))$('#cont').onclick=()=>{S=sv.S;uid=sv.uid;applyPace();startUI();refresh();startTurnTimer();};
 }
 function startUI(){
   $('#app').innerHTML=`<div class="topbar" id="topTabs"></div><div class="game dkg"><div class="mapw"><svg id="map"></svg><div id="dock"></div>
@@ -1361,19 +1411,19 @@ function cycleQ(){const nx=qNow()==='lite'?'full':'lite';
 function howDlg(next){UI.howSeen=true;const go=next?'UI.howNext()':'closeDlg()';UI.howNext=()=>{closeDlg();next&&next();};
   const st=(n,ic,t,d,w)=>`<div class="hw"><i class="hwn">${n}</i><span class="hwi">${ic}</span><b>${t}</b><small>${d}</small><em>${w}</em></div>`;
   openDlg(`<div class="howx"><h3>ゲームの流れ</h3>
-   <p class="howq">1ターンは2年。${YEARS[0]}年から${YEARS[YEARS.length-1]}年まで、${YEARS.length}ターンで終わる。1ターンは、次の順に進める。</p>
+   <p class="howq">${isRT()?`リアルタイム：ターンはなく、時間が流れつづける（${YEARS[0]}年から${endYear()-1}年まで）。次のことを、いつでも、くり返し行う。`:`1ターンは${YEARS.length>1?YEARS[1]-YEARS[0]:1}年。${YEARS[0]}年から${YEARS[YEARS.length-1]}年まで、${YEARS.length}ターンで終わる。1ターンは、次の順に進める。`}</p>
    <div class="hwflow">
     ${st(1,TABS[2][2],'話し合う','となりの家と、同盟・不可侵・援軍の約束をする。','上の「書状と外交」')}<span class="hwa">▶</span>
     ${st(2,AIC.rec,'兵と政策','金を使って兵を集め、政策を選ぶ。','「募兵」・上の「政策」')}<span class="hwa">▶</span>
     ${st(3,AIC.move,'軍勢に命令','軍勢ごとに、行き先を決めるか、とどまるかを選ぶ。','下の軍勢の札→右の命令')}<span class="hwa">▶</span>
-    ${st(4,'<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6" fill="none" stroke="currentColor" stroke-width="3"/></svg>','命令を確定','すべての軍勢に命令を出したら、ターンを終える。','右下の赤いボタン')}<span class="hwa">▶</span>
-    ${st(5,AIC.stay,'戦いと結果','全員の軍勢が同時に動く。敵の地域に入ると戦いになる。','この年の結果→次のターンへ')}
+    ${isRT()?st(4,'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 7v5l4 2" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>','時間が流れる','軍勢は月ごとに進む。金も月ごとに入る。','右下の時計'):st(4,'<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6" fill="none" stroke="currentColor" stroke-width="3"/></svg>','命令を確定','すべての軍勢に命令を出したら、ターンを終える。','右下の赤いボタン')}<span class="hwa">▶</span>
+    ${isRT()?st(5,AIC.stay,'戦い','軍勢が敵の地域に着くと、戦いになる。','結果は画面の上と「記録」に出る'):st(5,AIC.stay,'戦いと結果','全員の軍勢が同時に動く。敵の地域に入ると戦いになる。','この年の結果→次のターンへ')}
    </div>
-   <div class="hwloop">↻　5 が終わると次の年になり、1 にもどる</div>
+   <div class="hwloop">${isRT()?'↻　時間は止まらない。1〜3を、いつでも行える':'↻　5 が終わると次の年になり、1 にもどる'}</div>
    <div class="hwscr">
     <div class="hws-top">上：軍勢・政策・書状と外交・記録</div>
     <div class="hws-mid"><div class="hws-map"><b>地図</b><span>地域や軍勢をクリックして選ぶ。<br>矢印のボタン（▲◀▶▼）で地図を動かす。</span></div><div class="hws-side"><b>右：命令</b><span>移動・攻める<br>とどまる<br>募兵<br>大将を替える<br>編成</span></div></div>
-    <div class="hws-bot"><div class="hws-dock"><b>下：自分の軍勢の札</b><span>札を押すと、その軍勢が選ばれ、右に命令が出る</span></div><div class="hws-end">命令を確定して<br>ターンを終える</div></div>
+    <div class="hws-bot"><div class="hws-dock"><b>下：自分の軍勢の札</b><span>札を押すと、その軍勢が選ばれ、右に命令が出る</span></div><div class="hws-end">${isRT()?'時計<br>（止める・速さ）':'命令を確定して<br>ターンを終える'}</div></div>
    </div>
    <p class="howg"><b>めあて</b>　城を取って領地（石高）を広げ、家の目標をはたす。京都を持ち、全国の石高の${Math.round(UNIFY_SHARE*10)}割以上を持つと、天下統一となる。</p>
    <div class="row"><button class="btn pri" type="button" onclick="${go}">${next?'わかった（はじめる）':'とじる'}</button></div></div>`,'howbox',!next);}

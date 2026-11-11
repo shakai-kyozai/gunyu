@@ -33,7 +33,7 @@ const R=(...p)=>doc(db,'rooms',M.code,...p);
 const C=(...p)=>collection(db,'rooms',M.code,...p);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const sub=(r,fn)=>M.unsub.push(onSnapshot(r,fn,e=>{console.warn(e);netBad('通信が切れた。ページを読みこみ直してください。');}));
-function stopAll(){M.unsub.forEach(f=>{try{f();}catch(e){}});M.unsub=[];if(M.timer)clearInterval(M.timer);M.timer=0;}
+function stopAll(){M.unsub.forEach(f=>{try{f();}catch(e){}});M.unsub=[];if(M.timer)clearInterval(M.timer);M.timer=0;if(M.rtIv)clearInterval(M.rtIv);M.rtIv=0;}
 function netBad(t){const s=q$('#mpst');if(s){s.textContent=t;s.classList.add('bad');}else toast(t,true,6000);}
 function errMsg(e){const c=e&&e.code||'';
   if(/permission/.test(c))return '書きこみが許可されなかった（Firebaseのルールを確認）';
@@ -50,10 +50,11 @@ const ssSet=(k,v)=>{try{sessionStorage.setItem(k,v);}catch(e){}};
    ターンが進むたびに、この端末（ブラウザ）に自動で保存する。ファイルに書き出すこともできる。
    続きから遊ぶときは、新しい部屋を作るときに「続きから」を選ぶ（部屋番号は新しくなる） */
 const SAVE_MP='gunyu_mpsave';
-function saveObj(){const a=M.auth;return {v:1,savedAt:Date.now(),turn:a.turn,y:YEARS[a.turn],players:a.players||{},turnSec:a.turnSec||0,ended:!!a.ended,s:JSON.stringify({S:a,uid:M.authUid})};}
+function saveObj(){const a=M.auth;return {v:1,savedAt:Date.now(),turn:a.turn,pace:a.pace||'std',y:yearsFor(a.pace)[a.turn],players:a.players||{},turnSec:a.turnSec||0,ended:!!a.ended,s:JSON.stringify({S:a,uid:M.authUid})};}
 function autoSave(){if(!M.auth)return null;const v=saveObj();lsSet(SAVE_MP,JSON.stringify(v));return v;}
 function lastSave(){try{const v=JSON.parse(lsGet(SAVE_MP)||'null');return v&&v.s?v:null;}catch(e){return null;}}
-const saveTxt=v=>`${v.y}年・ターン${v.turn+1}／${YEARS.length}　（${Object.keys(v.players).map(h=>`${H[h]?H[h].n:h}：${v.players[h]}`).join('、')}）`;
+const paceName=p=>p==='rt'?'リアルタイム':p==='long'?'ロング（1ターン1年）':'ふつう（1ターン2年）';
+const saveTxt=v=>`${v.y}年・${v.pace==='rt'?'リアルタイム':`ターン${v.turn+1}／${yearsFor(v.pace).length}`}　（${Object.keys(v.players).map(h=>`${H[h]?H[h].n:h}：${v.players[h]}`).join('、')}）`;
 function download(){const v=autoSave();if(!v)return;
   try{const blob=new Blob([JSON.stringify(v)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=`群雄割拠_${v.y}年_ターン${v.turn+1}.json`;document.body.appendChild(a);a.click();a.remove();
@@ -62,7 +63,7 @@ function download(){const v=autoSave();if(!v)return;
 
 /* ---------- 入口：部屋を作る／部屋に入る ---------- */
 const TIMES=[[90,'1分30秒'],[120,'2分'],[180,'3分'],[300,'5分'],[0,'なし（全員がそろうまで待つ）']];
-function open(nick){M.nick=nick;M.house=null;M.resumeSave=null;
+function open(nick,selH,pace){M.nick=nick;M.house=null;M.resumeSave=null;
   const def=typeof TURN_SEC==='number'&&TURN_SEC?TURN_SEC:120;const ls=lastSave();
   openDlg(`<h3>みんなで遊ぶ</h3>
     <p>だれかが「部屋」を作り、ほかの人は部屋番号を入れて参加する。<b>動かす家は、部屋に入ってから選ぶ</b>。部屋を作った人の画面がターンを計算するので、部屋を作った人は画面を閉じない。</p>
@@ -74,6 +75,7 @@ function open(nick){M.nick=nick;M.house=null;M.resumeSave=null;
       <div class="mpcol"><b>部屋を作る</b>
         <label class="mpopt"><input type="radio" name="mpplay" value="1" checked> 自分も家を動かす</label>
         <label class="mpopt"><input type="radio" name="mpplay" value="0"> 見守るだけ（先生）</label>
+        <label class="mpopt">進め方 <select id="mppace">${['std','long','rt'].map(k=>`<option value="${k}" ${k===(pace||'std')?'selected':''}>${paceName(k)}</option>`).join('')}</select></label>
         <label class="mpopt">1ターンの時間 <select id="mpsec">${TIMES.map(([v,n])=>`<option value="${v}" ${v===def?'selected':''}>${n}</option>`).join('')}</select></label>
         <div class="mpsv"><label class="mpopt"><input type="radio" name="mpnew" value="new" checked> 新しく始める</label>
           ${ls?`<label class="mpopt"><input type="radio" name="mpnew" value="ls"> 続きから：${esc(saveTxt(ls))}</label>`:''}
@@ -94,10 +96,10 @@ async function pickSave(){const how=(document.querySelector('input[name=mpnew]:c
   return null;}
 
 async function make(){busy(true);err('部屋を作っている…');
-  const plays=(document.querySelector('input[name=mpplay]:checked')||{}).value==='1';const sec=+q$('#mpsec').value;
+  const plays=(document.querySelector('input[name=mpplay]:checked')||{}).value==='1';const sec=+q$('#mpsec').value;const pace=q$('#mppace').value;
   try{const sv=await pickSave();await login();
     for(let i=0;i<8;i++){const lo=10**(ROOM_DIGITS-1);const code=String(lo+Math.floor(Math.random()*9*lo));
-      try{await setDoc(doc(db,'rooms',code),{host:M.uid,hostNick:M.nick,hostPlays:plays,turnSec:sec,status:'lobby',
+      try{await setDoc(doc(db,'rooms',code),{host:M.uid,hostNick:M.nick,hostPlays:plays,turnSec:sec,pace:sv?(sv.pace||'std'):pace,status:'lobby',
           resume:sv?{turn:sv.turn,y:sv.y,players:sv.players}:null,created:serverTimestamp()});M.code=code;break;}
       catch(e){if(!/permission/.test(e.code||''))throw e;}}  // 使われている番号ならやり直す
     if(!M.code)throw new Error('部屋番号を決められなかった');
@@ -175,7 +177,7 @@ function lobbyMapDraw(canPick){if(q$('#lmwrap .lmw')){lobbyNicks();return;}const
 function lobby(){if(typeof MUSIC!=='undefined')MUSIC.scene('lobby');const host=M.role==='host';const canPick=!host||M.room.hostPlays;const rs=M.room.resume;
   q$('#app').innerHTML=`<div class="mpscr">
     <div class="mphead"><div><div class="mpl">部屋番号</div><div class="mpcode">${fmtCode(M.code)}</div>
-      <div class="hint">${host?'ほかの人は「みんなで遊ぶ」→ 部屋番号を入れて参加する。':`部屋を作った人：${esc(M.room.hostNick||'')}　`}1ターンの時間：${esc((TIMES.find(t=>t[0]===M.room.turnSec)||[0,'なし'])[1])}</div></div>
+      <div class="hint">${host?'ほかの人は「みんなで遊ぶ」→ 部屋番号を入れて参加する。':`部屋を作った人：${esc(M.room.hostNick||'')}　`}進め方：${paceName(M.room.pace)}${M.room.pace==='rt'?'':`　1ターンの時間：${esc((TIMES.find(t=>t[0]===M.room.turnSec)||[0,'なし'])[1])}`}</div></div>
       <div class="mpst" id="mpst">つながっている</div></div>
     ${rs?`<p class="mpwait">前回の続き（${rs.y}年・ターン${rs.turn+1}）から始める。前回と同じ家を選ぶ（「前回：」の名前が目じるし）。だれも選ばなかった家は、コンピューターが動かす。</p>`:''}
     ${canPick?`<div class="mpmine" id="mpmine"></div>`:''}
@@ -227,7 +229,7 @@ async function kick(u){const p=M.players[u];if(!p||!confirm(`${p.nick}${p.house?
    親の画面（部屋を作った人）：ターンを計算して配る
    ========================================================= */
 // 親の状態（M.auth）でエンジンを動かす。自分の画面の S はそのまま残す
-function withAuth(fn){const kS=S,kU=uid;S=M.auth;uid=M.authUid;try{return fn();}finally{M.auth=S;M.authUid=uid;S=kS;uid=kU;}}
+function withAuth(fn){const kS=S,kU=uid;S=M.auth;uid=M.authUid;applyPace();try{return fn();}finally{M.auth=S;M.authUid=uid;S=kS;uid=kU;applyPace();}}
 const liveHumans=()=>withAuth(()=>humans().filter(h=>alive(h)&&!S.ended));
 async function writeState(){const a=M.auth;M.t0=Date.now();
   await setDoc(R('game','state'),{turn:a.turn,t0:M.t0,dur:a.turnSec||0,ended:!!a.ended,s:JSON.stringify({S:a,uid:M.authUid})});
@@ -243,10 +245,11 @@ async function startGame(){const ps={};for(const k in M.houses)ps[k]=M.houses[k]
   q$('#mpstart').disabled=true;
   const kS=S,kU=uid;
   try{if(M.room.resume){const d=await getDoc(R('game','state'));const o=JSON.parse(d.data().s);S=o.S;uid=o.uid;}
-    else newGame(Object.keys(ps)[0]);
-    S.players=ps;S.mode='multi';S.me=null;S.turnSec=M.room.turnSec||0;S.ended=false;
+    else newGame(Object.keys(ps)[0],M.room.pace||'std');
+    S.players=ps;S.mode='multi';S.me=null;S.turnSec=S.pace==='rt'?0:(M.room.turnSec||0);S.ended=false;
+    if(S.pace==='rt'){S.rt=S.rt||{m:0,g:{},seen:{}};S.rt.sec=S.rt.sec||5;S.rt.paused=false;S.rt.n=S.rt.n||0;S.ack={};}
     M.auth=S;M.authUid=uid;}
-  finally{S=kS;uid=kU;}
+  finally{S=kS;uid=kU;applyPace();}
   try{await writeState();await updateDoc(R(),{status:'playing'});}catch(e){toast(errMsg(e),true);q$('#mpstart').disabled=false;return;}
   stopAll();hostDuties();M.house=Object.keys(M.houses).find(k=>M.houses[k].uid===M.uid)||null;UI.lobbyPick=null;
   if(M.house)enterGame();else watchScreen();}
@@ -262,9 +265,33 @@ function hostDuties(){
   sub(C('houses'),s=>{M.houses={};s.forEach(d=>M.houses[d.id]=d.data());});
   sub(C('btr'),s=>s.forEach(d=>M.btr[d.id]=d.data()));
   M.timer=setInterval(()=>{const a=M.auth;if(!M.house)tickWatch();if(!a||a.ended||M.resolving)return;
-    if(a.turnSec&&Date.now()>M.t0+a.turnSec*1000+8000)resolveTurn();},1000);}
-function checkAll(){const a=M.auth;if(!a||a.ended||M.resolving)return;const hs=liveHumans();
+    if(a.pace!=='rt'&&a.turnSec&&Date.now()>M.t0+a.turnSec*1000+8000)resolveTurn();},1000);
+  M.rtIv=setInterval(rtHost,200);}
+function checkAll(){const a=M.auth;if(!a||a.ended||M.resolving||a.pace==='rt')return;const hs=liveHumans();
   if(hs.length&&hs.every(h=>M.rd[h]&&M.rd[h].turn===a.turn))resolveTurn();}
+/* ---------- リアルタイム：親の画面が1か月ごとに進めて配る ----------
+   遊ぶ人の操作は ready/{家} に番号つきで届く。まだ行っていない番号だけを行い、S.ack に「ここまで行った」を書いて返す。合戦は自動で行う */
+function rtApplyActs(){S.ack=S.ack||{};
+  for(const h of humans().slice().sort()){const r=M.rd[h];if(!r||r.turn!=='rt'||!alive(h))continue;let L=[];try{L=JSON.parse(r.acts||'[]');}catch(e){}
+    for(const a of L){if(!(a.n>(S.ack[h]||0)))continue;try{doAct(h,a.k,a.args);}catch(e){console.warn('act',h,a,e);}S.ack[h]=a.n;}}}
+async function writeStateRT(save){const a=M.auth;M.t0=Date.now();
+  await setDoc(R('game','state'),{turn:a.turn,t0:M.t0,dur:0,ended:!!a.ended,s:JSON.stringify({S:a,uid:M.authUid})});
+  if(save||a.ended)autoSave();}
+async function rtHost(){const a=M.auth;if(!a||a.pace!=='rt'||a.ended||M.resolving||!a.rt||a.rt.paused)return;
+  if(Date.now()<M.t0+(a.rt.sec||5)*1000)return;
+  M.resolving=true;
+  try{withAuth(()=>{rtApplyActs();S._live=()=>false;try{rtTick();}finally{delete S._live;}S.rt.n=(S.rt.n||0)+1;});
+    await writeStateRT(a.rt.m%3===0);}
+  catch(e){console.error(e);toast('計算でエラーが起きた：'+errMsg(e),true,8000);M.t0=Date.now();}
+  M.resolving=false;if(!M.house)watchScreen();}
+// 時計を止める・進める・速さを変える（部屋を作った人だけ）
+async function rtCtl(o){const a=M.auth;if(!a||!a.rt||M.role!=='host')return;if(M.resolving){setTimeout(()=>rtCtl(o),200);return;}
+  M.resolving=true;try{withAuth(()=>{rtApplyActs();Object.assign(S.rt,o);});await writeStateRT(true);}catch(e){toast(errMsg(e),true);}
+  M.resolving=false;if(!M.house)watchScreen();}
+function rtFrac(){const b=M.base;if(!b||!b.rt||b.rt.paused)return 0;return Math.max(0,Math.min(1,(performance.now()-(M.tRecv||0))/1000/(b.rt.sec||5)));}
+let rtFlushT=0;
+function rtFlush(){clearTimeout(rtFlushT);rtFlushT=setTimeout(()=>{if(!S||!M.house)return;
+  setDoc(R('ready',M.house),{uid:M.uid,turn:'rt',acts:JSON.stringify(M.acts),at:serverTimestamp()}).catch(e=>{console.warn(e);toast(errMsg(e),true);});},250);}
 /* ---------- 合戦をその場で：陣形・しんがり・城の守り方を、かかわる家の人が選ぶ ----------
    親は合戦の場面ごとに bt/{家} に書き、かかわる人の返事（btr/{家}）を待つ。時間内に返事がない人は、そのターンのあいだコンピューターにまかせる */
 const BT_WAIT={start:30000,round:20000,end:30000};
@@ -322,24 +349,26 @@ async function hostLetter(id,L){if(L.applied||M.doing.has(id)||!M.auth)return;
 /* ---------- 見守る画面（先生） ---------- */
 function watchScreen(){const a=M.auth;if(!a)return;const hs=Object.keys(a.players||{});
   const v=withAuth(()=>({y:yearNow(),turn:S.turn,ended:S.ended,rows:hs.map(h=>({h,nick:S.players[h],k:Math.round(kokuOf(h)),n:areasOf(h).length,t:troopsOf(h),dead:!alive(h)})),
+    nT:YEARS.length,rt:S.pace==='rt'?{m:S.rt.m,paused:!!S.rt.paused,sec:S.rt.sec||5}:null,
     rank:Object.keys(H).filter(alive).sort((p,q)=>kokuOf(q)-kokuOf(p)).slice(0,10).map(h=>({h,k:Math.round(kokuOf(h))})),news:S.news.slice(-10).reverse()}));
   const rdy=h=>M.rd[h]&&M.rd[h].turn===v.turn;
   q$('#app').innerHTML=`<div class="mpscr">
     <div class="mphead"><div><div class="mpl">部屋番号 ${fmtCode(M.code)}　｜　見守る画面</div>
-      <div class="mpyr">${v.ended?'ゲーム終了':`${wareki(v.y)}（${v.y}年）　ターン ${v.turn+1}／${YEARS.length}`}</div>
+      <div class="mpyr">${v.ended?'ゲーム終了':`${wareki(v.y)}（${v.y}年）　${v.rt?`${v.rt.m+1}月`:`ターン ${v.turn+1}／${v.nT}`}`}</div>
       <div class="mptm" id="mptm"></div></div><div class="mpst" id="mpst">つながっている</div></div>
-    <h3>人が動かす家　命令を送った家 ${hs.filter(rdy).length}／${hs.filter(h=>!v.rows.find(r=>r.h===h).dead).length}</h3>
+    <h3>人が動かす家${v.rt?'':`　命令を送った家 ${hs.filter(rdy).length}／${hs.filter(h=>!v.rows.find(r=>r.h===h).dead).length}`}</h3>
     <table class="mpt"><tr><th>家</th><th>動かす人</th><th>石高</th><th>地域</th><th>兵</th><th>このターン</th></tr>
       ${v.rows.sort((p,q)=>q.k-p.k).map(r=>`<tr><td><span class="mpk" style="background:${H[r.h].col}">${kamonHTML(r.h)}</span>${esc(hname(r.h))}</td><td>${esc(r.nick)}</td><td>${r.k}万石</td><td>${r.n}</td><td>${(r.t*100).toLocaleString()}人</td>
-        <td>${r.dead?'<span class="dn">滅亡</span>':rdy(r.h)?'<b class="up">命令を送った</b>':'<span class="hint">考え中…</span>'}</td></tr>`).join('')}</table>
+        <td>${r.dead?'<span class="dn">滅亡</span>':v.rt?'—':rdy(r.h)?'<b class="up">命令を送った</b>':'<span class="hint">考え中…</span>'}</td></tr>`).join('')}</table>
     <div class="mpcols"><div><h3>石高の順位（全国）</h3><ol class="mprk">${v.rank.map(r=>`<li><span class="mpk" style="background:${H[r.h].col}">${kamonHTML(r.h)}</span>${esc(hname(r.h))}　${r.k}万石${a.players[r.h]?`<span class="who hu sm">${HU_SVG}${esc(a.players[r.h])}</span>`:''}</li>`).join('')}</ol></div>
       <div><h3>全国のうごき</h3><ul class="mpnews">${v.news.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div>
-    <div class="row"><button class="btn" type="button" id="mpclose">部屋を閉じる</button><button class="btn" type="button" id="mpsave">ゲームを保存（ファイルに書き出す）</button>${v.ended?'':'<button class="btn pri" type="button" id="mpnow">今すぐ次のターンへ進める</button>'}</div>
+    <div class="row"><button class="btn" type="button" id="mpclose">部屋を閉じる</button><button class="btn" type="button" id="mpsave">ゲームを保存（ファイルに書き出す）</button>${v.ended?'':v.rt?`<button class="btn pri" type="button" id="mprtp">${v.rt.paused?'▶ 時間を進める':'❚❚ 時間を止める'}</button><span class="hint">1か月の長さ</span>${[[8,'おそい'],[5,'ふつう'],[3,'はやい']].map(([x,n])=>`<button class="btn small mprts${v.rt.sec===x?' pri':''}" type="button" data-s="${x}">${n}（${x}秒）</button>`).join('')}`:'<button class="btn pri" type="button" id="mpnow">今すぐ次のターンへ進める</button>'}</div>
     <p class="hint">ゲームは、ターンが進むたびにこの端末にも自動で保存される。授業で終わらなかったときは、次の時間に新しい部屋を作るときに「続きから」を選ぶ。</p></div>`;
   const tr=q$('#tickrun');if(tr)tr.innerHTML=`<span>石高：${v.rank.slice(0,5).map((r,i)=>`${i+1}位 ${esc(H[r.h].n)}（${r.k}万石）`).join('　')}</span>`+v.news.map(t=>`<span>${esc(t)}</span>`).join('');
   q$('#mpclose').onclick=closeRoom;q$('#mpsave').onclick=download;const nb=q$('#mpnow');if(nb)nb.onclick=()=>{if(confirm('命令を送っていない家は、その場にとどまる。進めますか？'))resolveTurn();};
+  const rp=q$('#mprtp');if(rp)rp.onclick=()=>rtCtl({paused:!M.auth.rt.paused});document.querySelectorAll('.mprts').forEach(b=>b.onclick=()=>rtCtl({sec:+b.dataset.s}));
   tickWatch();}
-function tickWatch(){const e=q$('#mptm');if(!e||!M.auth)return;const d=M.auth.turnSec;if(M.resolving){e.textContent=M.stBattle?`合戦が行われている：${M.stBattle}`:'ターンを計算している…';return;}
+function tickWatch(){const e=q$('#mptm');if(!e||!M.auth)return;if(M.auth.pace==='rt'){e.textContent=M.auth.rt.paused?'時間は止まっている':'時間が流れている（リアルタイム）';return;}const d=M.auth.turnSec;if(M.resolving){e.textContent=M.stBattle?`合戦が行われている：${M.stBattle}`:'ターンを計算している…';return;}
   if(!d){e.textContent='時間の制限なし（全員がそろうと進む）';return;}const left=Math.max(0,Math.round(d-(Date.now()-M.t0)/1000));
   e.textContent=`のこり ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;}
 
@@ -368,7 +397,8 @@ function enterGame(){M.inGame=true;UI.lobbyPick=null;if(S&&S.mode==='preview')S=
       else replyDlg(L.toH,L.type,{ok:L.status==='ok',reply:L.status==='ok'?'承知した。':'お断りする。'});}}));}
 // 状態が届いた：新しいターンなら結果を見せる
 function onState(d){
-  const o=JSON.parse(d.s);const first=!S||S.mode!=='multi'||!q$('#map');const newTurn=d.turn!==M.turn||d.ended&&!(S&&S.ended);
+  const o=JSON.parse(d.s);
+  if(o.S.pace==='rt'){onStateRT(d,o);return;}const first=!S||S.mode!=='multi'||!q$('#map');const newTurn=d.turn!==M.turn||d.ended&&!(S&&S.ended);
   M.base=o.S;M.baseUid=o.uid;M.t0=d.t0;M.dur=d.dur;M.pseq=Math.max(M.pseq,d.t0);
   if(newTurn){M.btq=[];M.btRun=(M.btRun||0)+1;M.btBusy=false;M.turn=d.turn;M.acts=[];M.ready=false;M.status=null;
     // 同じターンの途中で読みこみ直したときは、操作をもどす
@@ -379,6 +409,14 @@ function onState(d){
   stopTurnTimer();closeDlg();
   UI.sel=null;UI.mode=null;UI.reach=null;UI.replay=true;refresh();
   animateMoves(()=>playMine(myBattlesOf(S.lastBattles),()=>{if(S.ended)showEnd();else showResultDlg();}));}
+// リアルタイム：月ごとに状態が届く。届いていない自分の操作だけをやりなおして重ねる
+function onStateRT(d,o){const first=!S||S.mode!=='multi'||!q$('#map');
+  M.base=o.S;M.baseUid=o.uid;M.t0=d.t0;M.tRecv=performance.now();M.pseq=Math.max(M.pseq,d.t0);M.turn=d.turn;
+  const ack=(o.S.ack||{})[M.house]||0;M.acts=(M.acts||[]).filter(a=>a.n>ack);M.actN=Math.max(M.actN||0,ack);
+  const n=o.S.rt?o.S.rt.n||0:0;const tick=n!==M.rtN;M.rtN=n;
+  rebuild();
+  if(first){startUI();if(S.ended){showEnd();return;}showEvent();return;}
+  if(tick)rtAfter();else{refresh();if(S.ended)showEnd();}}
 const btKey=b=>[b.name,b.a,(b.attHs||[]).join(',')].join('|');
 function onBt(d){if(!d||d.seq<=M.btLast||d.turn!==M.turn||Date.now()-d.t>90000)return;M.btLast=d.seq;
   let o;try{o=JSON.parse(d.s);}catch(e){return;}M.btq.push({seq:d.seq,...o});pumpBt();}
@@ -405,13 +443,14 @@ function showBt(x){return new Promise(done=>{const ev=x.ev;
 function playMine(list,done){list=list.filter(b=>!M.liveSeen.has(btKey(b)));M.liveSeen=new Set();let i=0;const next=()=>{const b=list[i++];if(!b){done();return;}playBattle(b,next);};next();}
 // 親の状態＋自分の操作のやりなおし ＝ 自分の画面
 function rebuild(orders){const keep=orders||(S&&S.mode==='multi'?S.orders:{})||{};
-  S=clone(M.base);uid=M.baseUid;S.me=M.house;
+  S=clone(M.base);uid=M.baseUid;S.me=M.house;applyPace();
+  if(S.pace==='rt'){for(const a of M.acts)try{doAct(S.me,a.k,a.args);}catch(e){console.warn(e);}return;}
   for(const a of M.acts)try{doAct(S.me,a.k,a.args);}catch(e){console.warn(e);}
   S.orders={};for(const id in keep){const x=S.armies.find(y=>String(y.id)===String(id));if(x&&x.h===S.me)S.orders[x.id]=keep[id];}}
 function applyPatch(p){let o;try{o=JSON.parse(p);}catch(e){return;}if(!M.base||o.seq<=M.pseq)return;M.pseq=o.seq;
   Object.assign(M.base,{rel:o.rel,gold:o.gold,lord:o.lord,req:o.req});rebuild();if(q$('#map'))refresh();}
-function saveLocal(){ssSet('gunyu_acts',JSON.stringify({code:M.code,turn:M.turn,acts:M.acts,orders:S&&S.orders||{},ready:M.ready}));}
-function record(k,args){M.acts.push({k,args:clone(args)});saveLocal();}
+function saveLocal(){if(isRT())return;ssSet('gunyu_acts',JSON.stringify({code:M.code,turn:M.turn,acts:M.acts,orders:S&&S.orders||{},ready:M.ready}));}
+function record(k,args){if(isRT()){M.actN=(M.actN||0)+1;M.acts.push({k,args:clone(args),n:M.actN});rtFlush();return;}M.acts.push({k,args:clone(args)});saveLocal();}
 async function ready(auto){if(M.ready||!S||S.ended||S.dead[S.me])return;if(typeof SFX!=='undefined')SFX.play('se_turn_end');M.ready=true;stopTurnTimer();
   const orders={};for(const id in S.orders){const x=S.armies.find(y=>String(y.id)===String(id));if(x&&x.h===S.me)orders[id]=S.orders[id];}
   try{await setDoc(R('ready',S.me),{uid:M.uid,turn:M.turn,acts:JSON.stringify(M.acts),orders:JSON.stringify(orders),at:serverTimestamp()});
@@ -448,4 +487,4 @@ function incoming(id,L){if(typeof SFX!=='undefined')SFX.play('se_letter_arrive')
     catch(e){closeDlg();toast(errMsg(e),true);}};
   q$('#mpok').onclick=()=>ans('ok');q$('#mpng').onclick=()=>ans('ng');}
 
-window.NET={open,save:saveLocal,download,isHost:()=>M.role==='host'&&!!M.auth,record,ready,unready,isReady:()=>M.ready,waitTxt,leftSec,afterResult,letter};
+window.NET={open,save:saveLocal,download,isHost:()=>M.role==='host'&&!!M.auth,record,ready,unready,isReady:()=>M.ready,rtFrac,rtCtl,waitTxt,leftSec,afterResult,letter};

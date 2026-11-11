@@ -41,7 +41,15 @@ const isMain=a=>PROV_MAIN[A[a].pid]===a;
 const provAreas=a=>AREAS.filter(x=>x.pid===A[a].pid).map(x=>x.id);
 
 const hn=h=>!h?'国人衆':H[h]?H[h].n+'家':h;
-const yearNow=()=>YEARS[S.turn];
+/* 進め方：std＝1ターン2年（data.js の YEARS のまま）／long＝1ターン1年／rt＝リアルタイム（時間が流れつづける。1年ごとに年が進む） */
+const YEARS_BASE=YEARS.slice();let PACE_NOW='std';
+const yearsFor=p=>{if(!p||p==='std')return YEARS_BASE;const o=[];const st=YEARS_BASE.length>1?YEARS_BASE[1]-YEARS_BASE[0]:1;for(let y=YEARS_BASE[0];y<YEARS_BASE[YEARS_BASE.length-1]+st;y++)o.push(y);return o;};
+function applyPace(){const p=(S&&S.pace)||'std';if(p===PACE_NOW)return;PACE_NOW=p;const L=yearsFor(p);YEARS.length=0;YEARS.push(...L);}
+const isRT=()=>!!S&&S.pace==='rt';
+const endYear=()=>{applyPace();return YEARS[YEARS.length-1]+(YEARS.length>1?YEARS[1]-YEARS[0]:1);};
+const RT={REACH:10,SPEED:1,SIEGE_M:4,AI_EVERY:3,ECON:12};   // リアルタイム：行き先を決められる遠さ／1か月に進む道のり／籠城1段階の月数／コンピューターが考える間かく（月）／1か月の収入＝1ターン分の何分の1か
+const sgTxt=n=>isRT()?`${n*RT.SIEGE_M}か月`:`${n}ターン`;
+const yearNow=()=>{applyPace();return YEARS[S.turn];};
 // 主従（家臣）：家臣の家は主君の陣営の一員になる。ほかの家との関係（同盟・敵対など）は主君と同じになる
 const topOf=h=>(S&&S.lord&&S.lord[h])||h;             // その家の陣営の主君（家臣でなければ自分）
 const sameCamp=(a,b)=>!!a&&!!b&&topOf(a)===topOf(b);
@@ -80,8 +88,8 @@ function garFull(a){
   const p=NEUTRAL_POW[a]||0.8;
   return {ashi:Math.round(k*0.45*p),kiba:0,yumi:Math.round(k*0.12*p),teppo:NEUTRAL_TEPPO.includes(a)?Math.round(k*0.15*p):0};
 }
-function newGame(me){
-  S={me,turn:0,own:{},gar:{},armies:[],busho:{},gold:{},pol:{},rel:{},lord:{},dead:{},log:[],letters:[],promises:[],hist:{},start:{},orders:{},req:[],wabo:{},waboNext:{},news:[],war:{},battles:[],ended:false};
+function newGame(me,pace){
+  S={me,pace:pace||'std',turn:0,own:{},gar:{},armies:[],busho:{},gold:{},pol:{},rel:{},lord:{},dead:{},log:[],letters:[],promises:[],hist:{},start:{},orders:{},req:[],wabo:{},waboNext:{},news:[],war:{},battles:[],ended:false};
   for(const id in H){S.gold[id]=12;S.pol[id]={};S.hist[id]=[];S.busho[id]=H[id].bu.map(b=>({n:b[0],t:b[1],dead:false}));}
   for(const id in H)for(const a of H[id].home)S.own[a]=id;
   for(const a of AREAS)S.gar[a.id]=garFull(a.id);
@@ -97,6 +105,7 @@ function newGame(me){
   }
   for(const [a,b,v] of REL0)setRel(a,b,v);
   for(const id in H)S.start[id]=kokuOf(id);
+  applyPace();if(S.pace==='rt')S.rt={m:0,g:{},seen:{},paused:false};
   snapshot();
 }
 function snapshot(){for(const id in H)S.hist[id].push(kokuOf(id));}
@@ -141,12 +150,13 @@ function* zocEngageG(plans,battles,fought,moved){
   }
 }
 function reach(ar){
+  const cap=isRT()?RT.REACH:MP;
   const dist={[ar.a]:0},prev={},q=[ar.a];const out={};const zoc=zocOf(ar.h);
   while(q.length){
     q.sort((x,y)=>dist[x]-dist[y]);const x=q.shift();
     if(x!==ar.a&&!passable(ar.h,x))continue; // 敵や国人衆の地域で止まる
     if(x!==ar.a&&zoc.has(x))continue;        // 敵の軍勢のとなり（ZOC）で止まる
-    for(const y of nbr(x)){const nd=dist[x]+EDGE[x][y].c;if(nd>MP)continue;if(dist[y]===undefined||nd<dist[y]){dist[y]=nd;prev[y]=x;q.push(y);}}
+    for(const y of nbr(x)){const nd=dist[x]+EDGE[x][y].c;if(nd>cap)continue;if(dist[y]===undefined||nd<dist[y]){dist[y]=nd;prev[y]=x;q.push(y);}}
   }
   for(const y in dist){if(y===ar.a)continue;const p=[];let c=y;while(c!==ar.a){p.unshift(c);c=prev[c];}out[y]={cost:dist[y],path:p};}
   return out;
@@ -396,9 +406,9 @@ function* battleAtG(a,plans,battles){
       const f=garFull(a);for(const t of TORDER)g[t]=Math.max(Math.round(g[t]*10)/10,Math.round(f[t]*0.3*10)/10);
       if(sg)sg.left-=1;else S.siege[a]={by:lead,left:ht,y:yearNow()};
       const L=S.siege[a].left;rec.siege=L;
-      news(`${A[a].n}の城兵は本丸にこもって籠城した（${hn(lead)}が包囲。あと${L}ターンで兵糧が尽きる）`);
-      if(isHu(owner)){S.log.push({h:owner,y:yearNow(),t:`${A[a].n}が${hn(lead)}に包囲され、籠城する（あと${L}ターン）`});S.events.push({h:owner,t:`${A[a].n}は籠城している。あと${L}ターンのうちに軍勢を送って包囲をやぶらないと落城する。`});}
-      for(const hh of rec.attHs.filter(isHu))S.events.push({h:hh,t:`${A[a].n}の城兵は本丸にこもった。包囲をつづければ、あと${L}ターンで落城する（軍勢を${A[a].n}から動かさないこと）。`});
+      news(`${A[a].n}の城兵は本丸にこもって籠城した（${hn(lead)}が包囲。あと${sgTxt(L)}で兵糧が尽きる）`);
+      if(isHu(owner)){S.log.push({h:owner,y:yearNow(),t:`${A[a].n}が${hn(lead)}に包囲され、籠城する（あと${sgTxt(L)}）`});S.events.push({h:owner,t:`${A[a].n}は籠城している。あと${sgTxt(L)}のうちに軍勢を送って包囲をやぶらないと落城する。`});}
+      for(const hh of rec.attHs.filter(isHu))S.events.push({h:hh,t:`${A[a].n}の城兵は本丸にこもった。包囲をつづければ、あと${sgTxt(L)}で落城する（軍勢を${A[a].n}から動かさないこと）。`});
       if(SA.me||SD.me||(S._watch&&S._watch([...SA.hs,...SD.hs,owner])))yield {k:'end',rec};
       return;}
     if(SA.me||SD.me||(S._watch&&S._watch([...SA.hs,...SD.hs,owner])))yield {k:'end',rec};
@@ -659,6 +669,19 @@ function* endTurnG(){
   for(const id in S.orders)orders[id]=S.orders[id];
   for(const h in H){if(!isHu(h)&&alive(h))aiTurn(h,orders);}
   aiHonor(orders);
+  orderChecks(orders);
+  S.lastOrders=JSON.parse(JSON.stringify(orders));
+  S.lastStart={};S.lastH={};S.armies.forEach(x=>{S.lastStart[x.id]=x.a;S.lastH[x.id]=x.h;});
+  const battles=yield* resolveTurnG(orders);
+  S.lastBattles=battles;
+  siegeTick();
+  logChanges();
+  S.orders={};S.req=[];S.wabo={};
+  yearEnd(true);
+  statusCheck();
+}
+// 約束やぶり・中立の家への攻めこみ（命令が出たとき）
+function orderChecks(orders){
   // 約束やぶり
   for(const ar of S.armies){const p=orders[ar.id];if(!p||!p.length)continue;const d=p[p.length-1];const o=S.own[d];
     if(o&&H[o]&&o!==ar.h&&friendly(ar.h,o)){S.promises.push({y:yearNow(),a:ar.h,b:o,t:`${hn(ar.h)}が約束をやぶり、${hn(o)}の${A[d].n}を攻めた`});setRel(ar.h,o,'teki');news(`${hn(ar.h)}が約束をやぶって${hn(o)}を攻めた`);for(const hh of [ar.h,o].filter(isHu))S.log.push({h:hh,y:yearNow(),t:`${hn(ar.h)}が約束をやぶり、${hn(o)}の${A[d].n}を攻める`});}}
@@ -669,24 +692,27 @@ function* endTurnG(){
       if(isHu(o)){S.log.push({h:o,y:yearNow(),t:`${hn(ar.h)}が${A[d].n}に攻めこんできた。${hn(ar.h)}は敵になった`});S.events.push({h:o,t:`${hn(ar.h)}が${A[d].n}に攻めこんできた。これより${hn(ar.h)}は敵（赤色）である。`});}
       if(isHu(ar.h)){S.log.push({h:ar.h,y:yearNow(),t:`${hn(o)}の${A[d].n}に攻めこみ、${hn(o)}と敵対する`});S.events.push({h:ar.h,t:`${hn(o)}の${A[d].n}に攻めこんだため、${hn(o)}は敵（赤色）になった。`});}
       break;}}
-  S.lastOrders=JSON.parse(JSON.stringify(orders));
-  S.lastStart={};S.lastH={};S.armies.forEach(x=>{S.lastStart[x.id]=x.a;S.lastH[x.id]=x.h;});
-  const battles=yield* resolveTurnG(orders);
-  S.lastBattles=battles;
+}
+// 籠城：兵糧がへる（only：対象をしぼる）
+function siegeTick(only){
   // 籠城：包囲がつづいていれば兵糧がへる。尽きたら落城。包囲の軍勢がいなくなれば包囲はとける
-  for(const a in (S.siege||{})){const sg=S.siege[a];const owner=S.own[a];
+  for(const a in (S.siege||{})){const sg=S.siege[a];const owner=S.own[a];if(only&&!only(a,sg))continue;
     const bes=armiesAt(a).filter(x=>owner&&x.h!==owner&&!friendly(x.h,owner));
     if(!owner||!bes.length){delete S.siege[a];if(owner){news(`${A[a].n}の包囲がとけた`);if(isHu(owner))S.log.push({h:owner,y:yearNow(),t:`${A[a].n}の包囲がとけた`});}continue;}
     sg.left-=1;
     if(sg.left<=0){const by=bes.sort((p,q)=>totU(q)-totU(p))[0].h;const arms=bes.filter(x=>allied(x.h,by));delete S.siege[a];S.gar[a]=zero();capture(a,by,arms,{});
       news(`${A[a].n}は兵糧が尽きて落城した（${hn(by)}が手に入れた）`);if(isHu(owner))S.events.push({h:owner,t:`${A[a].n}は兵糧が尽き、落城した。`});}
-    else{if(isHu(owner))S.events.push({h:owner,t:`${A[a].n}は籠城をつづけている。あと${sg.left}ターンで兵糧が尽きる。`});}}
+    else{if(isHu(owner))S.events.push({h:owner,t:`${A[a].n}は籠城をつづけている。あと${sgTxt(sg.left)}で兵糧が尽きる。`});}}
+}
+function logChanges(){
   for(const c of S.changes){
     if(isHu(c.to))S.log.push({h:c.to,y:yearNow(),t:`${A[c.a].n}（${A[c.a].pv}）を手に入れる${c.follow?`（${A[c.follow].n}が落ちたため）`:c.from?`（${hn(c.from)}から）`:''}`});
     else if(isHu(c.from))S.log.push({h:c.from,y:yearNow(),t:`${A[c.a].n}（${A[c.a].pv}）を${hn(c.to)}に奪われる`});
     if(!c.follow)news(`${hn(c.to)}が${A[c.a].n}（${A[c.a].pv}）を${c.from?hn(c.from)+'から奪った':'手に入れた'}${isMain(c.a)?'。'+A[c.a].pv+'国の拠点の城である':''}`);
   }
-  S.orders={};S.req=[];S.wabo={};
+}
+// 年末の処理（econ：収入と維持費もここで行う。リアルタイムでは月ごとに行うので false）
+function yearEnd(econ){
   // 年末：一揆・収入・維持費・城兵の回復
   S.ikki=[];
   for(const a of Object.keys(S.own)){
@@ -698,12 +724,15 @@ function* endTurnG(){
   // 家臣の年貢（収入の計算は地域が決まってから）
   const NG={};for(const v in (S.lord||{})){if(!alive(v)||!alive(S.lord[v]))continue;const g=nenguOut(v);NG[v]=(NG[v]||0)-g;NG[S.lord[v]]=(NG[S.lord[v]]||0)+g;
     if(isHu(v))S.log.push({h:v,y:yearNow(),t:`主君の${hn(S.lord[v])}に年貢として金${g}を納める`});if(isHu(S.lord[v]))S.log.push({h:S.lord[v],y:yearNow(),t:`家臣の${hn(v)}から年貢として金${g}が届く`});}
-  for(const h in H){if(!alive(h))continue;S.gold[h]+=income(h)-upkeep(h)+(NG[h]||0);if(S.gold[h]<0){for(const x of armiesOf(h))for(const u of x.u)u.n=Math.floor(u.n*0.85*10)/10;S.gold[h]=0;if(isHu(h))S.events.push({h,t:'金が足りず、兵の一部が逃げた'});}}
+  for(const h in H){if(!alive(h))continue;if(econ)S.gold[h]+=income(h)-upkeep(h)+(NG[h]||0);if(S.gold[h]<0){for(const x of armiesOf(h))for(const u of x.u)u.n=Math.floor(u.n*0.85*10)/10;S.gold[h]=0;if(isHu(h))S.events.push({h,t:'金が足りず、兵の一部が逃げた'});}}
   for(const a of AREAS){if(S.siege&&S.siege[a.id])continue;const f=garFull(a.id);const g=S.gar[a.id];for(const t of TORDER)g[t]=Math.min(f[t],g[t]+Math.ceil(f[t]*0.5));}
   for(const x of S.armies){x.rec=0;x.g=guardMax(x);}   // 旗本は年ごとにそろいなおす
   for(const h in H)if(alive(h))refill(h);
   for(const x of S.armies)x.u=x.u.filter(u=>u.n>=0.5);
   S.armies=S.armies.filter(x=>totU(x)>=1);
+}
+// 領地をなくした家・滅んだ家・主従のあとしまつ
+function statusCheck(){
   // 地域をなくした家の軍勢はちりぢりに
   // 地域をなくした家：コンピューターの家は滅ぶ。人が動かす家は、軍勢が残っていれば、最後の城を取った大名の家臣になる（領地なし・軍勢だけ）
   for(const h in H){if(!alive(h)||areasOf(h).length)continue;
@@ -865,6 +894,9 @@ const ACTS={
     const ar=newArmy(h,a,bi);for(const t of TORDER)for(let k=0;k<(Q[t]||0);k++)recruit(h,ar,t);
     S.log.push({h,y:yearNow(),t:`${A[a].n}で${S.busho[h][bi].n}を大将に新しい軍勢（${n}部隊）をつくる`});return ar.id;},
   makeArmy(h,{a,bi}){if(!freeBusho(h).some(o=>o.i===bi))return false;return newArmy(h,a,bi).id;},
+  // リアルタイム：行き先を決める／止まる
+  go(h,{ar,path}){const x=armyOf(h,ar);if(!x||!Array.isArray(path)||!path.length||path.length>40)return false;let c=x.a;for(const a of path){if(!EDGE[c]||!EDGE[c][a])return false;c=a;}S.orders[x.id]=path.slice();return true;},
+  halt(h,{ar}){const x=armyOf(h,ar);if(!x)return false;delete S.orders[x.id];delete x.mv;return true;},
   cmd(h,{ar,bi}){const x=armyOf(h,ar);if(!x)return false;x.cmd=bi;x.g=guardMax(x);return true;},
   policy(h,{id}){if(!policyOk(h,id).ok)return false;applyPolicy(h,id);return true;},
   joraku(h,{o}){if(!policyOk(h,'joraku').ok||!H[o])return false;applyPolicy(h,'joraku');S.waboNext[o]=h;const ny=YEARS[S.turn+1];
@@ -882,3 +914,73 @@ function score(h){const k=kokuOf(h);return Math.round(k+Math.max(0,k-S.start[h])
 const SAVE_KEY='kunitori2.save';
 function save(){if(S&&S.mode==='multi')return;try{localStorage.setItem(SAVE_KEY,JSON.stringify({S,uid}));}catch(e){}}
 function load(){try{return JSON.parse(localStorage.getItem(SAVE_KEY));}catch(e){return null;}}
+
+/* =========================================================
+   リアルタイム：時間が流れつづける。1か月を1刻みとして進める
+   ・S.orders[軍勢] ＝ のこりの道すじ（着くまで持ちつづける）。ar.mv ＝ いま歩いている道の進みぐあい
+   ・軍勢は1か月に道のり RT.SPEED だけ進む。敵の地域に着くと合戦になる
+   ・収入と維持費は月割り。年がかわると、補充・城兵の回復・できごと
+   ========================================================= */
+function* rtTickG(){
+  applyPace();const rt=S.rt||(S.rt={m:0,g:{},seen:{},paused:false});rt.g=rt.g||{};rt.seen=rt.seen||{};
+  S.events=[];S.changes=[];rt.newYear=false;
+  // コンピューターの家：数か月ごとに考える。手のあいた軍勢にだけ命令を出す
+  const hl=Object.keys(H);
+  hl.forEach((h,i)=>{if(isHu(h)||!alive(h)||(i+rt.m+S.turn*12)%RT.AI_EVERY)return;const o={};aiTurn(h,o);for(const id in o)if(!S.orders[id])S.orders[id]=o[id];});
+  if(S.req&&S.req.length){const o={};for(const id in S.orders)o[id]=S.orders[id];aiHonor(o);for(const id in o)if(!S.orders[id])S.orders[id]=o[id];}
+  // 命令をととのえる（いなくなった軍勢・つながらない道すじを消す）
+  const byId={};for(const x of S.armies)byId[x.id]=x;
+  for(const id of Object.keys(S.orders)){const x=byId[id];let p=S.orders[id];
+    if(!x||!p||!p.length){delete S.orders[id];continue;}
+    const k=p.indexOf(x.a);if(k>=0)p=S.orders[id]=p.slice(k+1);
+    if(!p.length||!EDGE[x.a]||!EDGE[x.a][p[0]]){delete S.orders[id];continue;}}
+  for(const x of S.armies){const p=S.orders[x.id];if(x.mv&&(!p||p[0]!==x.mv.to))delete x.mv;}
+  // 新しく出た命令：約束やぶり・攻めこみを調べる
+  {const fresh={};const seen={};for(const id in S.orders){const p=S.orders[id];const d=p[p.length-1];seen[id]=d;if(rt.seen[id]!==d)fresh[id]=p;}rt.seen=seen;orderChecks(fresh);}
+  const plans={};for(const x of S.armies){x.startA=x.a;const p=S.orders[x.id];plans[x.id]={steps:(p||[]).map(a=>({a})),i:0,stop:false};}
+  const battles=[];const fought=new Set();S._busy=new Set();S._own0={...S.own};
+  const halt=x=>{delete S.orders[x.id];delete x.mv;};
+  const sync=()=>{for(const x of S.armies){const pl=plans[x.id];if(pl&&pl.stop&&S.orders[x.id])halt(x);}for(const id in S.orders)if(!S.armies.some(x=>String(x.id)===String(id)))delete S.orders[id];};
+  // 同じ道を逆向きに進む敵どうしは、道の上でぶつかる（野戦）
+  {const on=S.armies.filter(x=>S.orders[x.id]).map(x=>({ar:x,from:x.a,to:S.orders[x.id][0]}));const done=new Set();
+    for(const m of on){if(done.has(m.ar.id)||!S.armies.includes(m.ar))continue;
+      const opp=on.filter(o=>!done.has(o.ar.id)&&S.armies.includes(o.ar)&&o.from===m.to&&o.to===m.from&&rel(o.ar.h,m.ar.h)==='teki');if(!opp.length)continue;
+      const sideA=on.filter(o=>o.from===m.from&&o.to===m.to&&allied(o.ar.h,m.ar.h)).map(o=>o.ar);
+      const leadB=opp.sort((p,q)=>totU(q.ar)-totU(p.ar))[0].ar.h;const sideB=opp.filter(o=>allied(o.ar.h,leadB)).map(o=>o.ar);
+      sideA.concat(sideB).forEach(x=>{done.add(x.id);fought.add(x.id);});
+      yield* fieldBattleG(sideA,sideB,m.to,plans,battles);sideA.concat(sideB).forEach(x=>{if(plans[x.id])plans[x.id].stop=true;});}
+    sync();}
+  // 進む
+  const arrived=new Set();const zc={};const zoc=h=>zc[h]||(zc[h]=zocOf(h));
+  for(const x of S.armies.slice()){let bud=RT.SPEED;const pl=plans[x.id];
+    while(bud>1e-6&&!pl.stop){const p=S.orders[x.id];if(!p||!p.length)break;const nx=p[0];const e=EDGE[x.a][nx];if(!e){halt(x);break;}
+      const done=x.mv?x.mv.p:0;const need=e.c-done;
+      if(bud+1e-6<need){x.mv={to:nx,p:done+bud};break;}
+      bud-=need;delete x.mv;
+      const o=S.own[nx];
+      if(o&&S.wabo[x.h]===o){pl.stop=true;S.events.push({h:x.h,t:`停戦命令のため、${hn(o)}の${A[nx].n}へは進めなかった`});break;}
+      if(o&&o!==x.h&&S._own0[nx]!==o&&!allied(x.h,o)&&rel(x.h,o)!=='teki'){bounce(x,nx,o,plans);break;}
+      x.prev=x.a;x.a=nx;p.shift();pl.i++;arrived.add(nx);if(!p.length)delete S.orders[x.id];
+      if(!passable(x.h,nx)||zoc(x.h).has(nx)){pl.stop=true;break;}}}
+  sync();
+  for(const a of arrived)yield* battleAtG(a,plans,battles);
+  sync();
+  yield* zocEngageG(plans,battles,fought,true);
+  sync();
+  delete S._busy;delete S._own0;
+  S.lastBattles=battles;if(battles.length)S.rtB=(S.rtB||[]).concat(battles.map(b=>{const c={...b};delete c.ev;return c;})).slice(-12);
+  // 籠城：RT.SIEGE_M か月ごとに兵糧がへる
+  for(const a in (S.siege||{})){const sg=S.siege[a];sg.m=(sg.m||0)+1;}
+  siegeTick((a,sg)=>{if(sg.m>=RT.SIEGE_M){sg.m=0;return true;}return false;});
+  logChanges();
+  // 月ごとの収入と維持費
+  const NG={};for(const v in (S.lord||{})){if(!alive(v)||!alive(S.lord[v]))continue;const g=nenguOut(v);NG[v]=(NG[v]||0)-g;NG[S.lord[v]]=(NG[S.lord[v]]||0)+g;}
+  for(const h in H){if(!alive(h))continue;rt.g[h]=(rt.g[h]||0)+(income(h)-upkeep(h)+(NG[h]||0))/RT.ECON;const w=Math.trunc(rt.g[h]);if(w){S.gold[h]+=w;rt.g[h]-=w;}}
+  for(const x of S.armies)x.u=x.u.filter(u=>u.n>=0.5);
+  S.armies=S.armies.filter(x=>totU(x)>=1);
+  statusCheck();sync();
+  rt.m++;
+  if(rt.m>=12){rt.m=0;rt.newYear=true;S.req=[];S.wabo={};yearEnd(false);S.resY=yearNow();nextTurn();sync();}
+  return battles;
+}
+function rtTick(){return drive(rtTickG());}

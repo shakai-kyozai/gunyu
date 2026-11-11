@@ -410,7 +410,7 @@ function buildPieces(){
       p.position.set(wx,hGame(gx,gy),wz);p.rotation.y=faceAngle(ar);
       const hit=new THREE.Mesh(R.geoHit,R.matHit);hit.visible=false;hit.position.y=(PIECE_H+4)/2;hit.userData.army={a,h:ar.h,id:ar.id};p.add(hit);p.userData.hit=hit;
       if(ar.id===UI.sel){const r=new THREE.Mesh(R.geoSel,R.matSel);r.rotation.x=Math.PI/2;r.position.y=0.8;p.add(r);p.userData.sel=r;}
-      p.userData.id=ar.id;setOrder(p,2);R.pieceG.add(p);
+      p.userData.id=ar.id;p.userData.g=[gx,gy];setOrder(p,2);R.pieceG.add(p);
       const t=document.createElement('div');t.className='t3u'+(ar.h===S.me?' me':'')+(ar.id===UI.sel?' sel':'');t.style.setProperty('--hc',H[ar.h].col);
       t.innerHTML=`<b>${kamonHTML(ar.h)}</b><span>${ar.u.length}</span>${needsRefill(ar)?'<em>✚</em>':''}${ar.h===S.me&&!S.orders[ar.id]&&stays().has(ar.id)?'<i class="t3st">とどまる</i>':''}`;t.title=hn(ar.h)+'　'+cmdOf(ar).n;
       t.onclick=ev=>{ev.stopPropagation();clickArea(a,ar.h,ar.id);};t.oncontextmenu=ev=>{ev.preventDefault();ev.stopPropagation();rightClickArea(a);};
@@ -544,7 +544,7 @@ function frame(now){
   {const act=R.tw||R.anim||now-(R.lastAct||0)<(LITE?600:1500);const cov=document.getElementById('dlg');const covered=cov&&cov.classList.contains('on');
     // ほかのウィンドウを操作しているとき（1台で何人分も開いているときなど）は、1秒に2〜3回だけ描く
     const unf=!document.hasFocus();const pulse=!!((R.arrowMats&&R.arrowMats.length)||UI.sel);
-    const gap=covered?(LITE?700:250):act?(LITE?30:0):unf?500:LITE?(pulse?200:1000):(pulse?80:250);if(gap&&now-(R.lastDraw||0)<gap)return;
+    const gap=covered?(LITE?700:250):act?(LITE?30:0):R.moving?(LITE?66:40):unf?500:LITE?(pulse?200:1000):(pulse?80:250);if(gap&&now-(R.lastDraw||0)<gap)return;
     // 描くのがおそい端末では、描く細かさを自動で下げる（動かしている間の1こまの時間をはかる）
     if(act&&R.lastDraw&&R.wasAct){const d=now-R.lastDraw;if(d<1200){R.ft=R.ft?R.ft*0.8+d*0.2:d;R.ftN=(R.ftN||0)+1;
       if(R.ftN>12&&R.ft>55&&(R.scale||1)>0.55){R.scale=Math.max(0.55,(R.scale||1)-0.15);R.ftN=0;R.ft=0;resize();}}}
@@ -556,6 +556,12 @@ function frame(now){
   if(R.tw){const t=Math.min(1,(now-R.tw.t0)/R.tw.dur);const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
     cam.position.lerpVectors(R.tw.p0,R.tw.p1,e);ctl.target.lerpVectors(R.tw.q0,R.tw.q1,e);if(t>=1)R.tw=null;}
   ctl.update();
+  // リアルタイム：進んでいる軍勢を、道のとちゅうに置く
+  if(window.rtMove&&isRT()&&R.pieceG){let mv=false;const m={};for(const x of S.armies)m[x.id]=x;
+    for(const p of R.pieceG.children){const ar=m[p.userData.id],g=p.userData.g;if(!ar||!g)continue;const o=window.rtMove(ar);
+      if(!o){if(p.userData.mvd){p.userData.mvd=false;const [wx,wz]=toW(g[0],g[1]);p.position.set(wx,hGame(g[0],g[1]),wz);}continue;}
+      const c=A[o.to].c;const x=g[0]+(c[0]-g[0])*o.f,y=g[1]+(c[1]-g[1])*o.f;const [wx,wz]=toW(x,y);p.position.set(wx,hGame(x,y),wz);p.userData.mvd=true;mv=true;}
+    R.moving=mv&&!(S.rt&&S.rt.paused);}else R.moving=false;
   // 方位磁針（北の向き）
   {const az=Math.atan2(cam.position.x-ctl.target.x,cam.position.z-ctl.target.z);if(R.azS==null||Math.abs(az-R.azS)>0.01){R.azS=az;const n=document.getElementById('cmpN');if(n)n.style.transform=`rotate(${(az*180/Math.PI).toFixed(1)}deg)`;}}
   const dist=cam.position.distanceTo(ctl.target);
@@ -642,7 +648,7 @@ const T3D={
     return true;
   },
   unmount(){running=false;if(R){R.canvas.remove();R.labels.remove();R.ro.disconnect();}host=null;},
-  update(){if(!R||!S||!host)return;R.lastAct=performance.now();for(const L of R.alab){const sg=S.siege&&S.siege[L.a.id];const sp=L.d.querySelector('span');if(sp)sp.textContent=sg?`${L.a.n}（籠城 あと${sg.left}）`:L.a.n;L.d.classList.toggle('sg',!!sg);}
+  update(){if(!R||!S||!host)return;R.lastAct=performance.now();for(const L of R.alab){const sg=S.siege&&S.siege[L.a.id];const sp=L.d.querySelector('span');if(sp)sp.textContent=sg?`${L.a.n}（籠城 あと${isRT()?sgTxt(sg.left):sg.left}）`:L.a.n;L.d.classList.toggle('sg',!!sg);}
     // 変わったものだけを描き直す（クリックのたびに全部を描き直すと重いため）
     const me=S.me;const own=JSON.stringify(S.own)+JSON.stringify(S.lord||{})+UI.mapMode+me;
     const rels=UI.mapMode==='dip'?Object.keys(H).map(h=>dipKey(h)[0]).join(''):'';
@@ -653,6 +659,7 @@ const T3D={
     sg('zc')(zoc,buildZoc);
     sg('hn')(own+(UI.hideNames?1:0),buildHouseNames);
     sg('bd')(own+rels,()=>{R.dBorder=true;});
+    if(isRT()&&Object.keys(S.orders).length&&!(S.rt&&S.rt.paused))R.moving=true;
     sg('ar')(JSON.stringify(S.orders)+'|'+UI.sel+'|'+(UI.replay?1:0)+'|'+S.turn+'|'+S.armies.length,()=>{R.dArrow=true;});},
   // 画質を変える（auto・lite・full）。地形の細かさと輪郭のなめらかさは、次に開いたときから変わる
   quality(q){if(q){try{localStorage.setItem(Q_KEY,q);}catch(e){}LITE=q==='lite';if(R){R.scale=1;R.ft=0;R.ftN=0;const m=R.land.material;m.defines=LITE?{LITE_Q:1}:{};m.needsUpdate=true;resize();R.lastAct=performance.now();}}return {pref:qPref(),lite:LITE};},
