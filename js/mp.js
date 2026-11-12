@@ -233,7 +233,10 @@ function pcard(p,btn){
   return `<div class="mpp" style="--hc:${H[p.house]?H[p.house].col:'#888'}"><span class="mpf">${face(p.house)}<i>${kamonHTML(p.house)}</i></span>
     <div class="mpn"><b>${esc(hname(p.house))}</b><span class="who hu">${HU_SVG}${esc(p.nick)}</span></div>${btn||''}</div>`;}
 async function closeRoom(){if(!confirm('部屋を閉じると、参加している人は全員ぬける。閉じますか？'+(M.auth?'（ゲームはこの端末に保存されている。新しい部屋を作るときに「続きから」で再開できる）':'')))return;
-  if(M.auth)autoSave();try{stopAll();await deleteDoc(R());}catch(e){toast(errMsg(e),true);}lsSet('gunyu_room','');location.reload();}
+  if(M.auth)autoSave();try{stopAll();await wipeRoom();await deleteDoc(R());}catch(e){toast(errMsg(e),true);}lsSet('gunyu_room','');location.reload();}
+// 部屋を閉じるとき：部屋の中の記録（参加者のニックネーム・家の札・ゲームの状態・命令・書状）をサーバーからすべて消す
+async function wipeRoom(){for(const c of ['letters','btr','bt','ready','players','houses','game']){
+    try{const ds=await getDocs(C(c));const js=[];ds.forEach(d=>js.push(deleteDoc(R(c,d.id)).catch(e=>console.warn('wipe',c,e.code||e))));await Promise.all(js);}catch(e){console.warn('wipe',c,e.code||e);}}}
 async function kick(u){const p=M.players[u];if(!p||!confirm(`${p.nick}${p.house?'（'+hname(p.house)+'）':''}を部屋から外しますか？`))return;
   try{await deleteDoc(R('players',u));if(p.house&&M.houses[p.house]&&M.houses[p.house].uid===u)await deleteDoc(R('houses',p.house));}catch(e){toast(errMsg(e),true);}}
 
