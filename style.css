@@ -1014,3 +1014,5 @@ html[data-ui=xs] #endBtn .ebox.rtbox{display:block}
 .rtn{padding:5px 14px;border-radius:4px;background:#17110bee;border:1px solid var(--gold);color:#fff0cf;font-size:13px;box-shadow:0 2px 8px #000a;animation:rtnin .3s ease-out}
 .rtn.bad{border-color:#ff8a6a;background:#3a100bee}
 @keyframes rtnin{from{opacity:0;transform:translateY(-8px)}}
+#mpwait{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:60;max-width:min(560px,calc(100vw - 32px));display:flex;flex-direction:column;gap:3px;padding:10px 18px;background:#1d1a16ee;color:#f3ecdc;border:2px solid #c9a24a;border-radius:6px;box-shadow:0 6px 20px #0006;text-align:center;pointer-events:none}
+#mpwait b{font-size:17px}#mpwait span{font-size:15px;color:#f0d48a}#mpwait small{font-size:13px;line-height:1.5;opacity:.9}

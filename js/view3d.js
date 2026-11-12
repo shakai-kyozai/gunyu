@@ -77,6 +77,7 @@ async function init(){
   const controls=new MapControls(camera,canvas);
   controls.addEventListener('change',()=>{if(R)R.lastAct=performance.now();});
   for(const ev of ['pointerdown','pointermove','wheel'])canvas.addEventListener(ev,()=>{if(R)R.lastAct=performance.now();},{passive:true});
+  controls.enableRotate=false;controls.touches={ONE:THREE.TOUCH.PAN,TWO:THREE.TOUCH.DOLLY_PAN};   // 地図の向きは固定（回さない）。動かすのと、拡大・縮小だけ
   controls.enableDamping=true;controls.dampingFactor=0.12;controls.maxPolarAngle=1.22;controls.minDistance=32;controls.maxDistance=2600;
   controls.zoomSpeed=1.2;controls.screenSpacePanning=false;
   scene.add(new THREE.HemisphereLight(0xffffff,0x40506a,1.6));

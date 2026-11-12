@@ -101,7 +101,8 @@ function zoom(f,e){const svg=$('#map');const r=svg.getBoundingClientRect();const
 function fitMap(){const r=$('#map').getBoundingClientRect();const f=UI.full;const ar=r.width/r.height;let w=f[2],h=f[3];if(w/h>ar)h=w/ar;else w=h*ar;UI.vb=[f[0]-(w-f[2])/2,f[1]-(h-f[3])/2,w,h];setVB();if(on3D())T3D.fit();}
 function focusOn(list,pad=160){if(!list.length)return fitMap();let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const a of list){const c=A[a].c;x0=Math.min(x0,c[0]);y0=Math.min(y0,c[1]);x1=Math.max(x1,c[0]);y1=Math.max(y1,c[1]);}
   const r=$('#map').getBoundingClientRect();const ar=r.width/r.height;let w=Math.max(220,x1-x0+pad),h=Math.max(220,y1-y0+pad);if(w/h>ar)h=w/ar;else w=h*ar;UI.vb=[(x0+x1)/2-w/2,(y0+y1)/2-h/2,w,h];setVB();if(on3D())T3D.focus(list,pad);}
-const focusMe=()=>focusOn(areasOf(S.me).concat(armiesOf(S.me).map(x=>x.a)));
+// わが家：自分の領地と、そのとなりの地域までが画面に入るようにする
+const focusMe=()=>{const mine=areasOf(S.me).concat(armiesOf(S.me).map(x=>x.a));const set=new Set(mine);for(const a of mine)for(const b of nbr(a))set.add(b);focusOn([...set],60);};
 
 const DIPCOL={self:'#3d6fd6',kashin:'#8a63d2',domei:'#2e9e44',fusen:'#a8c94a',none:'#e6c229',teki:'#d0473f',neutral:'#b9b0a0'};
 function dipKey(o){if(!o||!H[o])return 'neutral';return rel(S.me,o);}
@@ -430,8 +431,10 @@ function clickArea(a,h,aid){
   if(S.ended||S.dead[S.me])return;
   if(UI.mode==='move'){
     const ar=S.armies.find(x=>x.id===UI.sel);
-    if(ar&&UI.reach[a]){if(locked()){UI.mode=null;UI.reach=null;refresh();return;}const path=UI.reach[a].path;UI.mode=null;UI.reach=null;guardOrder(ar,path,()=>{giveOrder(ar,path);refresh();});refresh();return;}
-    UI.mode=null;UI.reach=null;refresh();return;
+    // 軍勢を選んだだけのとき（自動）：自分のほかの軍勢がいる地域や、行けない地域をクリックしたら、ふつうの選択にする
+    const other=UI.auto&&ar&&armiesAt(a).some(x=>x.h===S.me&&x.id!==ar.id&&(!aid||x.id===aid));
+    if(ar&&UI.reach[a]&&!other){if(locked()){UI.mode=null;UI.reach=null;refresh();return;}const path=UI.reach[a].path;UI.mode=null;UI.reach=null;UI.auto=false;guardOrder(ar,path,()=>{giveOrder(ar,path);refresh();orderToast(ar,a);});refresh();return;}
+    if(!UI.auto){UI.mode=null;UI.reach=null;refresh();return;}
   }
   UI.area=a;UI.mode=null;UI.reach=null;UI.tab=null;
   const mine=armiesAt(a).filter(x=>x.h===S.me);
@@ -439,9 +442,12 @@ function clickArea(a,h,aid){
   if(aid&&mine.some(x=>x.id===aid))UI.sel=aid;
   else if(mine.length){if(!mine.some(x=>x.id===UI.sel))UI.sel=mine[0].id;}
   else UI.sel=null;
-  refresh();
+  autoMove();refresh();
 }
-function selArmy(id){UI.tab=null;if(UI.sel!==id){UI.cards=new Set();UI.sub=null;}UI.sel=id;UI.mode=null;UI.reach=null;refresh();}
+function selArmy(id){UI.tab=null;if(UI.sel!==id){UI.cards=new Set();UI.sub=null;}UI.sel=id;UI.mode=null;UI.reach=null;autoMove();refresh();}
+// 自分の軍勢を選ぶと、すぐに行き先を選べるようにする（行ける地域が光る）。「移動・攻める」を押さなくてよい
+function autoMove(){UI.auto=false;const ar=S.armies.find(x=>x.id===UI.sel&&x.h===S.me);if(!ar||S.ended||S.dead[S.me]||UI.lobbyPick)return;
+  if(!isRT()&&S.mode==='multi'&&window.NET&&NET.isReady())return;UI.mode='move';UI.auto=true;UI.reach=reach(ar);}
 function togCard(id,ev){ev&&ev.stopPropagation();if(DK.justDragged)return;UI.cards.has(id)?UI.cards.delete(id):UI.cards.add(id);renderDock();}
 /* 右クリック：選んでいる自分の軍勢を、その地域へ進ませる（移動・攻める） */
 function rightClickArea(a){if(UI.lobbyPick)return;
@@ -477,7 +483,7 @@ function guardOrder(ar,path,go){const r=orderRisk(path);if(!r){go();return;}
 function warnYes(){const go=UI.warnGo;const h=UI.warnH;if(h&&rel(S.me,h)==='none'){S.okWar=S.okWar||{};S.okWar[h]=S.turn;}UI.warnGo=null;closeDlg();if(go)go();}
 function toast(t,bad,ms){let d=document.getElementById('toast');if(!d){d=document.createElement('div');d.id='toast';document.body.appendChild(d);}
   d.textContent=t;d.className=bad?'bad on':'on';clearTimeout(d._t);d._t=setTimeout(()=>d.className=bad?'bad':'',ms||2200);}
-function startMove(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);UI.mode='move';UI.sub=null;UI.reach=reach(ar);refresh();}
+function startMove(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);UI.mode='move';UI.auto=false;UI.sub=null;UI.reach=reach(ar);refresh();}
 function stay(){if(locked())return;const ar=S.armies.find(x=>x.id===UI.sel);if(!ar)return;if(isRT()){giveOrder(ar,null);UI.sub=null;UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は、${A[ar.a].n}で止まる`);return;}delete S.orders[UI.sel];stays().add(UI.sel);UI.sub=null;UI.mode=null;UI.reach=null;refresh();toast(`${cmdOf(ar).n}の軍勢は、${A[ar.a].n}にとどまる（命令ずみ）`);}
 function doRecruit(t){const ar=S.armies.find(x=>x.id===UI.sel);if(ar)act('recruit',{ar:ar.id,t});refresh();}
 function doDisband(){const ar=S.armies.find(x=>x.id===UI.sel);if(!ar||!UI.cards.size)return;act('disband',{ar:ar.id,ids:[...UI.cards]});UI.cards=new Set();if(!S.armies.includes(ar)){UI.sel=null;delete S.orders[ar.id];}refresh();}
@@ -1384,13 +1390,12 @@ function startUI(){
    <div class="mctl" title="地図の操作（キーボードの矢印キーでも動く）">
     <div class="mrow"><button type="button" class="zb t" onclick="fitMap()" title="全国を見る">全国</button><button type="button" class="zb t" onclick="focusMe()" title="自分の領地を見る">わが家</button></div>
     <div class="mrow"><button type="button" class="zb" onclick="zoom(0.75)" title="近づく">＋</button><button type="button" class="zb" onclick="zoom(1.33)" title="遠ざかる">－</button></div>
-    <div class="mrow rot"><button type="button" class="zb" onclick="T3D.rotate(-1)" title="左へ45度まわす">↺</button><button type="button" class="zb cmp" onclick="T3D.rotate(0)" title="北を上にもどす"><i id="cmpN"></i><b>北</b></button><button type="button" class="zb" onclick="T3D.rotate(1)" title="右へ45度まわす">↻</button></div>
     <div class="dpad"><button type="button" class="dp u" data-d="0,-1" title="上へ">▲</button><button type="button" class="dp l" data-d="-1,0" title="左へ">◀</button><button type="button" class="dp r" data-d="1,0" title="右へ">▶</button><button type="button" class="dp d" data-d="0,1" title="下へ">▼</button></div>
    </div>
    <div class="mmode"><button type="button" class="btn small" id="mDip" onclick="setMode('dip')">外交の色</button><button type="button" class="btn small" id="mPow" onclick="setMode('pow')">家ごとの色</button><button type="button" class="btn small" id="mTer" onclick="setMode('ter')">地形</button><span id="dipLeg"></span><span class="mmx"><button type="button" class="btn small" id="bQ" onclick="cycleQ()" title="立体の地図の画質。動きが重いときは「軽い」にする"></button><button type="button" class="btn small" onclick="howDlg()" title="ゲームの流れを見る">ゲームの流れ</button></span></div>
 </div><div id="side"><div id="panel"></div><div class="legend" onclick="this.classList.toggle('open')"><span class="lgt">凡例を見る ▸</span><span class="lgc">${Object.keys(KIND).map(k=>`<svg class="lgi" viewBox="0 0 512 512"><use href="#ic-${k}"/></svg>${KIND[k].n}`).join(' ')}　<span class="lg2d"><span class="lr main"></span>主な街道 <span class="lr mtn"></span>山道 </span><span class="v3only">街道は地図に描きこみ（軍勢は街道にそって動く） </span><span class="lr sea"></span>海路　右下の数字は部隊の数（1部隊＝最大1000人）　大きな印は国の拠点の城　<span class="zocl"></span>赤い斜線＝敵の軍勢がいる地域（にらみの範囲）：入るとそこで止まり、その敵と戦う<span class="v3only"><br>右クリック：選んだ軍勢をその地域へ進める　立体の地図：ドラッグで動かす・右ドラッグで回す・ホイールで拡大　標高：国土地理院（高さは8倍に強調）</span></span></div><div id="journal"></div></div></div>`;
   initPad();qUI();
-  UI.vb=null;applyUi();buildMap();setTimeout(()=>setMode(UI.mapMode),0);UI.vb=UI.full.slice();focusMe();refresh();set3D(UI.v3,true);
+  UI.mapMode='dip';UI.vb=null;applyUi();buildMap();setTimeout(()=>setMode(UI.mapMode),0);UI.vb=UI.full.slice();focusMe();refresh();set3D(UI.v3,true);
 }
 /* ---------- 矢印で地図を動かす（タブレット・トラックパッド向け） ---------- */
 function panMap(dx,dy){if(on3D()){T3D.pan(dx,dy);return;}if(!UI.vb)return;const f=UI.full;UI.vb[0]=Math.max(f[0]-UI.vb[2]*0.6,Math.min(f[0]+f[2]-UI.vb[2]*0.4,UI.vb[0]+dx*UI.vb[2]*0.22));UI.vb[1]=Math.max(f[1]-UI.vb[3]*0.6,Math.min(f[1]+f[3]-UI.vb[3]*0.4,UI.vb[1]+dy*UI.vb[3]*0.22));setVB();}
@@ -1415,7 +1420,7 @@ function howDlg(next){UI.howSeen=true;const go=next?'UI.howNext()':'closeDlg()';
    <div class="hwflow">
     ${st(1,TABS[2][2],'話し合う','となりの家と、同盟・不可侵・援軍の約束をする。','上の「書状と外交」')}<span class="hwa">▶</span>
     ${st(2,AIC.rec,'兵と政策','金を使って兵を集め、政策を選ぶ。','「募兵」・上の「政策」')}<span class="hwa">▶</span>
-    ${st(3,AIC.move,'軍勢に命令','軍勢ごとに、行き先を決めるか、とどまるかを選ぶ。','下の軍勢の札→右の命令')}<span class="hwa">▶</span>
+    ${st(3,AIC.move,'軍勢に命令','軍勢をクリックして選び、地図で光っている地域をクリックすると、そこへ進む。','軍勢をクリック→光った地域をクリック')}<span class="hwa">▶</span>
     ${isRT()?st(4,'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 7v5l4 2" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>','時間が流れる','軍勢は月ごとに進む。金も月ごとに入る。','右下の時計'):st(4,'<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6" fill="none" stroke="currentColor" stroke-width="3"/></svg>','命令を確定','すべての軍勢に命令を出したら、ターンを終える。','右下の赤いボタン')}<span class="hwa">▶</span>
     ${isRT()?st(5,AIC.stay,'戦い','軍勢が敵の地域に着くと、戦いになる。','結果は画面の上と「記録」に出る'):st(5,AIC.stay,'戦いと結果','全員の軍勢が同時に動く。敵の地域に入ると戦いになる。','この年の結果→次のターンへ')}
    </div>
