@@ -15,7 +15,7 @@ service cloud.firestore {
 
     // 部屋：作った人だけが書きかえ・削除できる
     match /rooms/{code} {
-      allow read: if signedIn();
+      allow get: if signedIn();   // 部屋番号を知っている人だけが読める（部屋の一覧は取り出せない）
       allow create: if signedIn() && code.matches('^[0-9]{6}$')
         && request.resource.data.host == request.auth.uid;
       allow update: if signedIn() && resource.data.host == request.auth.uid
