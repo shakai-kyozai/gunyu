@@ -337,7 +337,9 @@ async function resolveTurn(){if(M.resolving||!M.auth||M.auth.ended)return;M.reso
         try{for(const a of JSON.parse(r.acts||'[]'))try{doAct(h,a.k,a.args);}catch(e){console.warn('act',h,a,e);}
           const o=JSON.parse(r.orders||'{}');for(const id in o){const x=S.armies.find(y=>String(y.id)===String(id));if(x&&x.h===h)S.orders[x.id]=o[id];}}
         catch(e){console.warn('ready',h,e);}}
-      S._live=h=>isHu(h)&&!M.away.has(h);S._watch=hs=>hs.some(h=>h&&isHu(h));});
+      // 合戦の進め方：MP_LIVE が false（ふつう）なら、すべての合戦をここで一気に計算する（陣形と退却は家老＝コンピューターが決める）。
+      // 結果が配られると、全員が同時に、自分の合戦だけを見る。true なら、1つずつ順番に、陣形と退却を本人が決める
+      if(typeof MP_LIVE!=='undefined'&&MP_LIVE){S._live=h=>isHu(h)&&!M.away.has(h);S._watch=hs=>hs.some(h=>h&&isHu(h));}else S._live=()=>false;});
     const g=withAuth(()=>endTurnG());let input;
     let st=null;
     for(;;){const r=withAuth(()=>g.next(input));input=undefined;
@@ -479,7 +481,7 @@ function waitBar(){let d=q$('#mpwait');const st=M.status;const on=!!(st&&st.turn
   if(!on){if(d)d.remove();return;}
   if(!d){d=document.createElement('div');d.id='mpwait';document.body.appendChild(d);}
   const h=st.battle?`<b>ほかの家の合戦が行われている${st.bn?`（この年の${st.bn}つ目）`:''}</b><span>${esc(st.battle)}</span><small>あなたの軍勢は、この合戦に関係していない。終わるまで待つ。全部の合戦が終わると、次の年の結果が出る。</small>`
-    :`<b>全員の命令がそろった。この年の動きを計算している</b><small>軍勢が動き、ぶつかった所で合戦が起こる。合戦は1つずつ順番に行われる。</small>`;
+    :`<b>全員の命令がそろった。この年の動きを計算している</b><small>軍勢が動き、ぶつかった所で合戦が起こる。すぐに結果が出る。</small>`;
   if(d._h!==h){d._h=h;d.innerHTML=h;}}
 function waitTxt(){const st=M.status;if(!st||st.turn!==M.turn)return '';if(st.resolving)return st.battle?`。合戦が行われている：${st.battle}`:'。ターンを計算している…';return `（${st.ready.length}／${st.tot}）`;}
 function leftSec(){return M.dur?Math.max(3,M.dur-(Date.now()-M.t0)/1000):0;}
