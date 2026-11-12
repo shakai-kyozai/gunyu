@@ -924,7 +924,9 @@ LB.open=function(ev,auto,cb){
   const run=++BV.run;BV.skip=false;BV.retreatReq=false;
   LB.ev=ev;LB.auto=auto;LB.run=run;LB.ended=false;
   const info=sid=>{const sd=ev[sid];const h=sd.hs[0]||(sid==='D'?ev.def:null)||null;
-    return {h,name:h?hn(h)+(sd.hs.length>1?'（ほか'+(sd.hs.length-1)+'家）':''):(NEUTRAL_NAME[ev.a]||'国人衆'),cmd:sd.cmd,col:h&&H[h]?H[h].col:'#8a8580'};};
+    // その側の家を動かしている人のニックネーム（コンピューターの家は出さない）
+    const hs=[...new Set([...sd.hs,...(sid==='D'&&ev.def?[ev.def]:[])])];const nick=hs.filter(x=>S.players&&S.players[x]).map(x=>S.players[x]).join('・');
+    return {h,nick,name:h?hn(h)+(sd.hs.length>1?'（ほか'+(sd.hs.length-1)+'家）':''):(NEUTRAL_NAME[ev.a]||'国人衆'),cmd:sd.cmd,col:h&&H[h]?H[h].col:'#8a8580'};};
   const iA=info('A'),iD=info('D');LB.iA=iA;LB.iD=iD;
   const meA=ev.meA,meD=ev.meD;LB.myS=auto?null:(meA?'A':meD?'D':null);LB.meA=meA;LB.meD=meD;
   const CA=ev.A.cards.map(c=>({...c,cur:c.n,n0:c.n})),CD=ev.D.cards.map(c=>({...c,cur:c.n,n0:c.n}));
@@ -935,7 +937,7 @@ LB.open=function(ev,auto,cb){
   const fm=(sid,k)=>{const F=ev.siege&&sid==='D'?SIEGE_CMD:FORMS;return F[k]?F[k].n:'';};LB.fm=fm;
   const cmdBox=(info,G,sid,mine)=>{const g=G.find(x=>x.main)||G[0];const f=info.h?faceUrl(info.h,info.cmd.n):null;
     return `<div class="bvs ${sid}${mine?' mine':''}" style="--hc:${info.col}"><div class="bvsh">${f?`<span class="bvface" style="--hc:${info.col}"><img src="${f}" alt=""><i>${kamonHTML(info.h)}</i></span>`:info.h?`<span class="bvkm" style="background:${info.col}">${kamonHTML(info.h)}</span>`:''}
-      <div><b>${esc(info.name)}</b>${mine?'<span class="bvme">あなた</span>':''}<div class="hint">総大将 ${esc(info.cmd.n)}（統率${info.cmd.t}）</div>
+      <div><b>${esc(info.name)}</b>${info.nick?`<span class="who hu sm">${HU_SVG}${esc(info.nick)}</span>`:''}${mine?'<span class="bvme">あなた</span>':''}<div class="hint">総大将 ${esc(info.cmd.n)}（統率${info.cmd.t}）</div>
       <div class="bvgd" id="bvgd${sid}">${g?`旗本 <b>${Math.round(g.cur*100)}</b>人`:'旗本なし'}</div><div class="bvfm" id="bvfm${sid}">陣形：―</div>${ev['mo'+sid]!=null?`<div class="bvmo" data-tip="士気：損害や鉄砲の音と煙で下がる。${(typeof MORALE==='object'?MORALE.rout:20)}以下になると軍勢はくずれて敗走する"><span>士気</span><i><b id="bvmo${sid}" style="width:${ev['mo'+sid]}%"></b></i><em id="bvmon${sid}">${ev['mo'+sid]}</em></div>`:''}${ev['sonae'+sid]?'<div class="bvsn">備を立てている</div>':''}</div><div class="bvn" id="bvn${sid}">${Math.round(tot(sid==='A'?CA:CD,G)*100).toLocaleString()}人</div></div>
       <div class="bvcs">${G.map((x,i)=>bvGuardCard(x,i,sid)).join('')}${(sid==='A'?CA:CD).map((c,i)=>bvCard(c,i,sid)).join('')}</div></div>`;};
   openDlg(`<div class="bv"><div class="bvhd">${scrollBand(esc(ev.name||A[ev.a].n+'の戦い'))}<span class="bvsub">${ev.y}年・${A[ev.a].pv}国・${ev.ter==='山'?'山地':'平地'}　<span class="bvkind">${ev.field?'野戦':'城攻め'}</span>${auto?'<span class="hint">　（記録を見なおしている）</span>':''}</span></div>
@@ -1228,7 +1230,7 @@ function bvField(ev,CA,CD,GA,GD,iA,iD){
       if(f.k==='spark'&&q<=1){g.strokeStyle=`rgba(255,${200+Math.random()*55|0},80,${1-q})`;g.lineWidth=1.6;for(let a=0;a<5;a++){const an=a*1.26+f.t%3;g.beginPath();g.moveTo(f.x0,f.y0);g.lineTo(f.x0+Math.cos(an)*(4+q*9),f.y0+Math.sin(an)*(4+q*9));g.stroke();}}}
     {const L=ALL.slice().sort((p,q)=>p.y-q.y);for(const u of L)drawU(u);}
     g.font='bold 13px "BIZ UDPGothic",sans-serif';g.textBaseline='top';g.fillStyle='rgba(255,253,246,0.92)';
-    for(const [txt,al,xx] of [[iA.name,'left',8],[iD.name,'right',W-8]]){g.textAlign=al;g.lineWidth=3;g.strokeStyle='rgba(0,0,0,0.55)';g.strokeText(txt,xx,6);g.fillText(txt,xx,6);}
+    for(const [txt,al,xx] of [[iA.name+(iA.nick?`（${iA.nick}）`:''),'left',8],[iD.name+(iD.nick?`（${iD.nick}）`:''),'right',W-8]]){g.textAlign=al;g.lineWidth=3;g.strokeStyle='rgba(0,0,0,0.55)';g.strokeText(txt,xx,6);g.fillText(txt,xx,6);}
     for(const b of bubbles)drawBubble(b,now);
     if(banner){const q=(now-banner.t0)/banner.ms;if(q<=1){g.save();g.globalAlpha=Math.min(1,q*5,(1-q)*4);g.fillStyle='rgba(20,12,8,0.78)';g.fillRect(0,Hh/2-26,W,52);g.font='bold 30px "Yuji Syuku","BIZ UDPMincho",serif';g.textAlign='center';g.textBaseline='middle';g.fillStyle='#ffb0a4';g.fillText(banner.text,cx,Hh/2+1);g.restore();}}
   };
